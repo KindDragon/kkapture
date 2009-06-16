@@ -66,6 +66,8 @@ static void captureGLFrame()
     setCaptureResolution(rc.right-rc.left,rc.bottom-rc.top);
   }
 
+  VideoCaptureDataLock lock;
+
   if(captureData && encoder && params.CaptureVideo)
   {
     // use immediate blits if possible
@@ -151,6 +153,8 @@ static LONG __stdcall Mine_ChangeDisplaySettingsEx(LPCTSTR lpszDeviceName,LPDEVM
 static HGLRC __stdcall Mine_wglCreateContext(HDC hdc)
 {
   HGLRC result = Real_wglCreateContext(hdc);
+  if(result)
+    graphicsInitTiming();
 
   return result;
 }
@@ -158,6 +162,8 @@ static HGLRC __stdcall Mine_wglCreateContext(HDC hdc)
 HGLRC __stdcall Mine_wglCreateLayerContext(HDC hdc,int iLayerPlane)
 {
   HGLRC result = Real_wglCreateLayerContext(hdc,iLayerPlane);
+  if(result)
+    graphicsInitTiming();
 
   return result;
 }

@@ -611,6 +611,9 @@ public:
   virtual HRESULT __stdcall SetFormat(LPCWAVEFORMATEX pcfxFormat)
   {
     Format = *pcfxFormat;
+    if(playBuffer==this)
+      encoder->SetAudioFormat(&Format);
+
     return S_OK;
   }
 
@@ -631,6 +634,9 @@ public:
     Frequency = dwFrequency;
     Format.nSamplesPerSec = dwFrequency;
     Format.nAvgBytesPerSec = Format.nBlockAlign * dwFrequency;
+    if(playBuffer==this)
+      encoder->SetAudioFormat(&Format);
+
     return S_OK;
   }
 
@@ -735,6 +741,9 @@ public:
   {
     if(desc && (desc->dwSize == sizeof(DSBUFFERDESC) || desc->dwSize == sizeof(DSBUFFERDESC1)))
     {
+      if(desc->dwFlags & DSBCAPS_LOCHARDWARE) // we certainly don't do hw mixing.
+        return DSERR_CONTROLUNAVAIL;
+
       *ppDSBuffer = new MyDirectSoundBuffer8(desc->dwFlags,desc->dwBufferBytes,desc->lpwfxFormat);
       printLog("sound: buffer created\n");
       return S_OK;
@@ -770,8 +779,18 @@ public:
 
   virtual HRESULT __stdcall DuplicateSoundBuffer(LPDIRECTSOUNDBUFFER pDSBufferOriginal,LPDIRECTSOUNDBUFFER *ppDSBufferDuplicate)
   {
-    printLog("sound: DuplicateSoundBuffer attempted (not implemented yet)\n");
-    return E_NOTIMPL;
+    printLog("sound: attempting DuplicateSoundBuffer hack...\n");
+
+    if(!ppDSBufferDuplicate)
+      return E_INVALIDARG;
+
+    // we don't mix, so simply return a handle to the same buffer and hope it works...
+    pDSBufferOriginal->AddRef();
+    *ppDSBufferDuplicate = pDSBufferOriginal;
+    return S_OK;
+
+    //printLog("sound: DuplicateSoundBuffer attempted (not implemented yet)\n");
+    //return E_NOTIMPL;
   }
 
   virtual HRESULT __stdcall SetCooperativeLevel(HWND hwnd,DWORD dwLevel)

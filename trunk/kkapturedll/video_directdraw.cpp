@@ -428,6 +428,8 @@ static void PrimarySurfaceCreated(IUnknown *ddraw,IUnknown *srfp,int ver)
         printLog("video: could not create blit target\n");
     }
   }
+
+  graphicsInitTiming();
 }
 
 static void ImplementFlip(IUnknown *surf,int version)
@@ -455,6 +457,8 @@ static void ImplementFlip(IUnknown *surf,int version)
 
     if(back)
     {
+      VideoCaptureDataLock lock;
+
       if(Blitter.BlitSurfaceToCapture(back,version))
         encoder->WriteFrame(captureData);
 
@@ -469,6 +473,8 @@ static void ImplementBltToPrimary(IUnknown *surf,int version)
 {
   if(!surf)
     return;
+
+  printLog("ImplementBltToPrimary %d\n",version);
 
   if(params.CaptureVideo)
   {
@@ -494,6 +500,8 @@ static void ImplementBltToPrimary(IUnknown *surf,int version)
       else
         printLog("video: couldn't get blit source surface desc\n");
     }
+
+    VideoCaptureDataLock lock;
 
     if(Blitter.BlitSurfaceToCapture((IDirectDrawSurface *) surf,version))
       encoder->WriteFrame(captureData);
@@ -540,18 +548,9 @@ static HRESULT __stdcall Mine_DDrawSurface_Blt(IUnknown *me,LPRECT dstr,IUnknown
 static HRESULT __stdcall Mine_DDrawSurface_Flip(IUnknown *me,IUnknown *other,DWORD flags)
 {
   if(PrimarySurfaceVersion == 1)
-  {
-    ImplementFlip(me,1);
-    nextFrame();
-    return S_OK;
-  }
-  else
-    return Real_DDrawSurface_Flip(me,other,flags);
-
-  /*if(PrimarySurfaceVersion == 1)
     ImplementFlip(me,1);
 
-  return Real_DDrawSurface_Flip(me,other,flags);*/
+  return Real_DDrawSurface_Flip(me,other,flags);
 }
 
 // ---- directdraw 2

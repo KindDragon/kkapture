@@ -23,6 +23,7 @@
 #include "stdafx.h"
 #include "avi_videoencoder_vfw.h"
 #include "video.h"
+#include "audio_resample.h"
 
 #pragma comment(lib, "vfw32.lib")
 
@@ -40,6 +41,12 @@ struct AVIVideoEncoderVFW::Internal
   unsigned long codec;
   unsigned int quality;
   LONG overflowCounter;
+
+  bool audioOk;
+  AudioResampler resampler;
+  WAVEFORMATEX targetFormat;
+  int resampleSize;
+  short *resampleBuf;
 
   bool initialized;
   bool formatSet;
@@ -142,6 +149,8 @@ void AVIVideoEncoderVFW::Cleanup()
       printLog("avi_vfw: exception during avifile shutdown, video may be corrupted\n");
     }
 
+    delete[] d->resampleBuf;
+
     AVIFileExit();
     printLog("avi_vfw: avifile shutdown complete\n");
     d->initialized = false;
@@ -226,6 +235,8 @@ void AVIVideoEncoderVFW::StartAudioEncode(const tWAVEFORMATEX *fmt)
   audioSample = 0;
   audioBytesSample = fmt->nBlockAlign;
 
+  d->targetFormat = *fmt;
+
   // fill already written frames with no sound
   unsigned char *buffer = new unsigned char[audioBytesSample * 1024];
   int sampleFill = int(1.0f * fmt->nSamplesPerSec * frame / fps);
@@ -273,6 +284,10 @@ AVIVideoEncoderVFW::AVIVideoEncoderVFW(const char *name,float _fps,unsigned long
   d->segment = 1;
   d->codec = codec;
   d->quality = quality;
+
+  d->audioOk = false;
+  d->resampleSize = 0;
+  d->resampleBuf = 0;
 
   d->initialized = false;
   d->formatSet = false;
@@ -329,11 +344,8 @@ void AVIVideoEncoderVFW::WriteFrame(const unsigned char *buffer)
 
 void AVIVideoEncoderVFW::SetAudioFormat(const tWAVEFORMATEX *fmt)
 {
-  if(params.CaptureAudio && !d->aud)
-  {
-    d->wfx = *fmt;
-    StartAudioEncode(&d->wfx);
-  }
+  d->wfx = *fmt;
+  d->audioOk = d->resampler.Init(fmt,d->aud ? &d->targetFormat : fmt);
 }
 
 void AVIVideoEncoderVFW::GetAudioFormat(tWAVEFORMATEX *fmt)
@@ -348,13 +360,31 @@ void AVIVideoEncoderVFW::WriteAudioFrame(const void *buffer,int samples)
 {
   EnterCriticalSection(&d->lock);
 
+  if(params.CaptureAudio && !d->aud)
+    StartAudioEncode(&d->wfx);
+
   if(d->aud)
   {
-    LONG written = 0;
-    AVIStreamWrite(d->aud,audioSample,samples,(LPVOID) buffer,
-      samples*audioBytesSample,0,0,&written);
-    audioSample += samples;
-    d->overflowCounter += written;
+    int needSize = d->resampler.MaxOutputSamples(samples);
+    if(needSize > d->resampleSize)
+    {
+      delete[] d->resampleBuf;
+      d->resampleBuf = new short[needSize * 4];
+      d->resampleSize = needSize;
+    }
+
+    int outSamples = d->resampler.Resample(buffer,d->resampleBuf,samples,false);
+
+    if(outSamples)
+    {
+      LONG written = 0;
+      /*AVIStreamWrite(d->aud,audioSample,samples,(LPVOID) buffer,
+        samples*audioBytesSample,0,0,&written);*/
+      AVIStreamWrite(d->aud,audioSample,outSamples,(LPVOID) d->resampleBuf,
+        outSamples*audioBytesSample,0,0,&written);
+      audioSample += outSamples;
+      d->overflowCounter += written;
+    }
   }
 
   LeaveCriticalSection(&d->lock);

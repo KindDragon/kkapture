@@ -62,6 +62,10 @@ struct ParameterBlock
   BOOL MakeSleepsLastOneFrame;
   DWORD SleepTimeout;
   BOOL NewIntercept;
+
+  BOOL EnableAutoSkip;
+  DWORD FirstFrameTimeout;
+  DWORD FrameTimeout;
 };
 
 extern ParameterBlock params;
