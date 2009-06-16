@@ -27,8 +27,8 @@
 			/>
 			<Tool
 				Name="VCCustomBuildTool"
-				CommandLine="copy $(TargetPath) $(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)&#x0D;&#x0A;"
-				Outputs="$(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)"
+				CommandLine="copy &quot;$(TargetPath)&quot; &quot;$(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)&quot;"
+				Outputs="&quot;$(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)&quot;"
 			/>
 			<Tool
 				Name="VCXMLDataGeneratorTool"
@@ -113,8 +113,8 @@
 			/>
 			<Tool
 				Name="VCCustomBuildTool"
-				CommandLine="copy $(TargetPath) $(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)&#x0D;&#x0A;"
-				Outputs="$(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)"
+				CommandLine="copy &quot;$(TargetPath)&quot; &quot;$(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)&quot;"
+				Outputs="&quot;$(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)&quot;"
 			/>
 			<Tool
 				Name="VCXMLDataGeneratorTool"

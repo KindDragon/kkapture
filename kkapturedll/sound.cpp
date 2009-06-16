@@ -629,6 +629,8 @@ public:
   virtual HRESULT __stdcall SetFrequency(DWORD dwFrequency)
   {
     Frequency = dwFrequency;
+    Format.nSamplesPerSec = dwFrequency;
+    Format.nAvgBytesPerSec = Format.nBlockAlign * dwFrequency;
     return S_OK;
   }
 
@@ -754,7 +756,7 @@ public:
         | DSCAPS_SECONDARY16BIT | DSCAPS_SECONDARY8BIT
         | DSCAPS_SECONDARYMONO | DSCAPS_SECONDARYSTEREO;
       pDSCaps->dwMinSecondarySampleRate = 4000;
-      pDSCaps->dwMaxSecondarySampleRate = 48000;
+      pDSCaps->dwMaxSecondarySampleRate = 96000;
       pDSCaps->dwPrimaryBuffers = 1;
 
       return S_OK;
