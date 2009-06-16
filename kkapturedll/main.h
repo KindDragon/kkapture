@@ -67,6 +67,9 @@ struct ParameterBlock
   BOOL EnableAutoSkip;
   DWORD FirstFrameTimeout;
   DWORD FrameTimeout;
+
+  BOOL IsDebugged;
+  BOOL PowerDownAfterwards;
 };
 
 extern ParameterBlock params;

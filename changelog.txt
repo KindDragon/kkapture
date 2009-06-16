@@ -1,3 +1,14 @@
+version 0.07:
+* "frame timed out" now mentions *which* frame was skipped (if you want to check whether the video is fine or if it causes problems)
+* if kkapture is being debugged, main.cpp now gives you time to attach the debugger to the target demo aswell.
+  (this is the deluxe version of a hack i've been using for ages - thought it might be useful for others trying to debug, too :)
+* fixed some bugs in the cleanup code that may have caused crashes after recording was complete.
+* waveOutGetPosition now even accepts wrong size specifications for MMTIME struct as long as they're big enough (helps candystall)
+* ddraw code temp surface handling should now be more stable (helps with moral hard candy)
+* seeding of all timers now synchronized. helps with demos that mix timing values returned from independent sources (not a good idea!!!).
+  in any case, fixes problems with ante dominum.
+* "power down after completion" switch
+
 version 0.06b:
 * now default to vfw video encoder on new installations.
 * "fairlight hack" switch now explicit due to request - turn it on for track one and possibly other flt demos, otherwise leave it off.
@@ -18,8 +29,8 @@ version 0.06:
   and probably a lot of other demos too.
   
   how to use: check "Enable automatic frameskip on timeout".
-  the two timeout values define how much time the application has to render
-  the first/subsequent frames; if it takes longer, kkapture will skip a
+  the two timeout values define how much time the application has to render 
+  the first/subsequent frames; if it takes longer, kkapture will skip a 
   frame and write a log message. lower timeouts mean faster kkapturing for
   apps that explicitly perform waits every frame, but the lower you set those
   values, the higher the risk that kkapture will drop a frame just because

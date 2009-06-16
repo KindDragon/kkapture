@@ -85,7 +85,7 @@ public:
     Filter(filter),XRes(xRes),YRes(yRes)
   {
     // time per frame is in units of 100 nanoseconds
-    TimePerFrame = 10.0*1000*1000 / fps;
+    TimePerFrame = REFERENCE_TIME(10.0*1000*1000 / fps);
     Frames = 0;
     Terminating = false;
 
@@ -477,7 +477,7 @@ public:
     memset(buffer,0,sizeof(buffer));
 
     WAVEFORMATEX *fmt = (WAVEFORMATEX *) m_mt.Format();
-    DWORD fillBytes = UMulDiv(frames*100,fmt->nAvgBytesPerSec,fps*100);
+    DWORD fillBytes = UMulDiv(frames*100,fmt->nAvgBytesPerSec,int(fps*100));
 
     while(fillBytes)
     {

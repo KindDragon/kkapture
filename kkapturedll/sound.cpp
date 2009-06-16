@@ -589,6 +589,8 @@ public:
     if(!Playing)
       SkipAllowed = TRUE;
 
+    printLog("sound: play\n");
+
     Playing = TRUE;
     Looping = (dwFlags & DSBPLAY_LOOPING) ? TRUE : FALSE;
 
@@ -1065,6 +1067,22 @@ public:
     return MMSYSERR_NOERROR;
   }
 
+  MMRESULT reset()
+  {
+    while(Head)
+      doneBuffer();
+
+    CurrentBufferPos = 0;
+    CurrentSamplePos = 0;
+
+    Paused = false;
+    InLoop = false;
+    FirstFrame = -1;
+    FirstWriteFrame = -1;
+
+    return MMSYSERR_NOERROR;
+  }
+
   MMRESULT message(UINT uMsg,DWORD dwParam1,DWORD dwParam2)
   {
     return 0;
@@ -1072,12 +1090,22 @@ public:
 
   MMRESULT getPosition(MMTIME *mmt,UINT size)
   {
-    if(!mmt || size != sizeof(MMTIME))
+    if(!mmt || size < sizeof(MMTIME))
       return MMSYSERR_INVALPARAM;
+
+    if(size > sizeof(MMTIME))
+    {
+      static bool warnedAboutMMTime = false;
+      if(!warnedAboutMMTime)
+      {
+        printLog("sound: MMTIME structure passed to waveOutGetPosition is too large, ignoring extra fields (will only report this once).\n");
+        warnedAboutMMTime = true;
+      }
+    }
 
     if(mmt->wType != TIME_BYTES && mmt->wType != TIME_SAMPLES && mmt->wType != TIME_MS)
     {
-      printLog("sound: unsupported timecode format, defaulting to bytes\n");
+      printLog("sound: unsupported timecode format, defaulting to bytes.\n");
       mmt->wType = TIME_BYTES;
       return MMSYSERR_INVALPARAM;
     }
@@ -1169,6 +1197,7 @@ DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutUnprepareHeader(HWAVEOUT hwo,LP
 DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutWrite(HWAVEOUT hwo,LPWAVEHDR pwh,UINT cbwh), waveOutWrite);
 DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutPause(HWAVEOUT hwo), waveOutPause);
 DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutRestart(HWAVEOUT hwo), waveOutRestart);
+DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutReset(HWAVEOUT hwo), waveOutReset);
 DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutMessage(HWAVEOUT hwo,UINT uMsg,DWORD_PTR dw1,DWORD_PTR dw2), waveOutMessage);
 DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutGetPosition(HWAVEOUT hwo,LPMMTIME pmmt,UINT cbmmt), waveOutGetPosition);
 DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutGetDevCaps(UINT_PTR uDeviceId,LPWAVEOUTCAPS pwo,UINT cbwoc), waveOutGetDevCaps);
@@ -1186,6 +1215,8 @@ static WaveOutImpl *GetWaveOutImpl(HWAVEOUT hwo)
 
 MMRESULT __stdcall Mine_waveOutOpen(LPHWAVEOUT phwo,UINT uDeviceID,LPCWAVEFORMATEX pwfx,DWORD_PTR dwCallback,DWORD_PTR dwInstance,DWORD fdwOpen)
 {
+  TRACE(("waveOutOpen(%p,%u,%p,%p,%p,%u)\n",phwo,uDeviceID,pwfx,dwCallback,dwInstance,fdwOpen));
+
   if(phwo)
   {
     printLog("sound: waveOutOpen %08x (%d hz, %d bits, %d channels)\n",
@@ -1208,6 +1239,8 @@ MMRESULT __stdcall Mine_waveOutOpen(LPHWAVEOUT phwo,UINT uDeviceID,LPCWAVEFORMAT
 
 MMRESULT __stdcall Mine_waveOutClose(HWAVEOUT hwo)
 {
+  TRACE(("waveOutClose(%p)\n",hwo));
+
   printLog("sound: waveOutClose %08x\n",hwo);
 
   WaveOutImpl *impl = GetWaveOutImpl(hwo);
@@ -1225,48 +1258,64 @@ MMRESULT __stdcall Mine_waveOutClose(HWAVEOUT hwo)
 
 MMRESULT __stdcall Mine_waveOutPrepareHeader(HWAVEOUT hwo,LPWAVEHDR pwh,UINT cbwh)
 {
+  TRACE(("waveOutPrepareHeader(%p,%p,%u)\n",hwo,pwh,cbwh));
   WaveOutImpl *impl = GetWaveOutImpl(hwo);
   return impl ? impl->prepareHeader(pwh,cbwh) : MMSYSERR_INVALHANDLE;
 }
 
 MMRESULT __stdcall Mine_waveOutUnprepareHeader(HWAVEOUT hwo,LPWAVEHDR pwh,UINT cbwh)
 {
+  TRACE(("waveOutUnprepareHeader(%p,%p,%u)\n",hwo,pwh,cbwh));
   WaveOutImpl *impl = GetWaveOutImpl(hwo);
   return impl ? impl->unprepareHeader(pwh,cbwh) : MMSYSERR_INVALHANDLE;
 }
 
 MMRESULT __stdcall Mine_waveOutWrite(HWAVEOUT hwo,LPWAVEHDR pwh,UINT cbwh)
 {
+  TRACE(("waveOutWrite(%p,%p,%u)\n",hwo,pwh,cbwh));
   WaveOutImpl *impl = GetWaveOutImpl(hwo);
   return impl ? impl->write(pwh,cbwh) : MMSYSERR_INVALHANDLE;
 }
 
 MMRESULT __stdcall Mine_waveOutPause(HWAVEOUT hwo)
 {
+  TRACE(("waveOutPause(%p)\n",hwo));
   WaveOutImpl *impl = GetWaveOutImpl(hwo);
   return impl ? impl->pause() : MMSYSERR_INVALHANDLE;
 }
 
 MMRESULT __stdcall Mine_waveOutRestart(HWAVEOUT hwo)
 {
+  TRACE(("waveOutRestart(%p)\n",hwo));
   WaveOutImpl *impl = GetWaveOutImpl(hwo);
   return impl ? impl->restart() : MMSYSERR_INVALHANDLE;
 }
 
+MMRESULT __stdcall Mine_waveOutReset(HWAVEOUT hwo)
+{
+  TRACE(("waveOutReset(%p)\n",hwo));
+  WaveOutImpl *impl = GetWaveOutImpl(hwo);
+  return impl ? impl->reset() : MMSYSERR_INVALHANDLE;
+}
+
 MMRESULT __stdcall Mine_waveOutMessage(HWAVEOUT hwo,UINT uMsg,DWORD_PTR dw1,DWORD_PTR dw2)
 {
+  TRACE(("waveOutMessage(%p,%u,%p,%p)\n",hwo,uMsg,dw1,dw2));
   WaveOutImpl *impl = GetWaveOutImpl(hwo);
   return impl ? impl->message(uMsg,(DWORD) dw1,(DWORD) dw2) : MMSYSERR_INVALHANDLE;
 }
 
 MMRESULT __stdcall Mine_waveOutGetPosition(HWAVEOUT hwo,LPMMTIME pmmt,UINT cbmmt)
 {
+  TRACE(("waveOutGetPosition(%p,%p,%u)\n",hwo,pmmt,cbmmt));
   WaveOutImpl *impl = GetWaveOutImpl(hwo);
   return impl ? impl->getPosition(pmmt,cbmmt) : MMSYSERR_INVALHANDLE;
 }
 
 MMRESULT __stdcall Mine_waveOutGetDevCaps(UINT_PTR uDeviceID,LPWAVEOUTCAPS pwoc,UINT cbwoc)
 {
+  TRACE(("waveOutGetDevCaps(%p,%p,%u)\n",uDeviceID,pwoc,cbwoc));
+
   WaveOutImpl *impl;
 
   if(uDeviceID == WAVE_MAPPER || uDeviceID == 0)
@@ -1299,6 +1348,7 @@ MMRESULT __stdcall Mine_waveOutGetDevCaps(UINT_PTR uDeviceID,LPWAVEOUTCAPS pwoc,
 
 UINT __stdcall Mine_waveOutGetNumDevs()
 {
+  TRACE(("waveOutGetNumDevs()\n"));
   return 1;
 }
 
@@ -1317,6 +1367,7 @@ void initSound()
   DetourFunctionWithTrampoline((PBYTE) Real_waveOutUnprepareHeader,(PBYTE) Mine_waveOutUnprepareHeader);
   DetourFunctionWithTrampoline((PBYTE) Real_waveOutWrite,(PBYTE) Mine_waveOutWrite);
   DetourFunctionWithTrampoline((PBYTE) Real_waveOutPause,(PBYTE) Mine_waveOutPause);
+  DetourFunctionWithTrampoline((PBYTE) Real_waveOutReset,(PBYTE) Mine_waveOutReset);
   DetourFunctionWithTrampoline((PBYTE) Real_waveOutRestart,(PBYTE) Mine_waveOutRestart);
   DetourFunctionWithTrampoline((PBYTE) Real_waveOutMessage,(PBYTE) Mine_waveOutMessage);
   DetourFunctionWithTrampoline((PBYTE) Real_waveOutGetPosition,(PBYTE) Mine_waveOutGetPosition);

@@ -24,8 +24,10 @@
 #include "videocapturetimer.h"
 #include "video.h"
 #include <malloc.h>
+#include <intrin.h>
 #include <process.h>
 
+#pragma intrinsic(_ReadWriteBarrier)
 #pragma comment(lib, "winmm.lib")
 
 // events
@@ -57,6 +59,38 @@ DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_timeSetEvent(UINT uDelay,UINT uResolut
 DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_timeKillEvent(UINT uTimerID), timeKillEvent);
 DETOUR_TRAMPOLINE(UINT_PTR __stdcall Real_SetTimer(HWND hWnd,UINT_PTR uIDEvent,UINT uElapse,TIMERPROC lpTimerFunc), SetTimer);
 
+// timer seeds
+static bool TimersSeeded = false;
+static CRITICAL_SECTION TimerSeedLock;
+static LARGE_INTEGER firstTimeQPC;
+static DWORD firstTimeTGT;
+static FILETIME firstTimeGSTAFT;
+
+static void seedAllTimers()
+{
+  if(!TimersSeeded)
+  {
+    EnterCriticalSection(&TimerSeedLock);
+    _ReadWriteBarrier();
+
+    if(!TimersSeeded)
+    {
+      Real_QueryPerformanceCounter(&firstTimeQPC);
+      firstTimeTGT = Real_timeGetTime();
+      Real_GetSystemTimeAsFileTime(&firstTimeGSTAFT);
+
+      // never actually mark timers as seeded in the first frame (i.e. before anything
+      // was presented) - you get problems with config dialogs etc. otherweise
+      TimersSeeded = getFrameTiming() != 0;
+      _ReadWriteBarrier();
+    }
+
+    LeaveCriticalSection(&TimerSeedLock);
+  }
+}
+
+// actual timing functions
+
 BOOL __stdcall Mine_QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency)
 {
   if(!IsBadWritePtr(lpFrequency,sizeof(LARGE_INTEGER)))
@@ -68,13 +102,10 @@ BOOL __stdcall Mine_QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency)
 BOOL __stdcall Mine_QueryPerformanceCounter(LARGE_INTEGER *lpCounter)
 {
   int frame = getFrameTiming();
-  static LARGE_INTEGER firstTime = { 0 };
-
-  if(!frame)
-    Real_QueryPerformanceCounter(&firstTime);
+  seedAllTimers();
 
   if(!IsBadWritePtr(lpCounter,sizeof(LARGE_INTEGER)))
-    lpCounter->QuadPart = firstTime.QuadPart + ULongMulDiv(perfFrequency,frame*100,frameRateScaled);
+    lpCounter->QuadPart = firstTimeQPC.QuadPart + ULongMulDiv(perfFrequency,frame*100,frameRateScaled);
 
   return TRUE;
 }
@@ -83,24 +114,17 @@ DWORD __stdcall Mine_GetTickCount()
 {
   // before the first frame is finished, time still progresses normally
   int frame = getFrameTiming();
-  static int firstTime = 0;
+  seedAllTimers();
 
-  if(!frame)
-    firstTime = Real_timeGetTime();
-    //firstTime = Real_GetTickCount();
-
-  return firstTime + UMulDiv(frame,1000*100,frameRateScaled);
+  return firstTimeTGT + UMulDiv(frame,1000*100,frameRateScaled);
 }
 
 DWORD __stdcall Mine_timeGetTime()
 {
   int frame = getFrameTiming();
-  static int firstTime = 0;
+  seedAllTimers();
 
-  if(!frame)
-    firstTime = Real_timeGetTime();
-
-  return firstTime + UMulDiv(frame,1000*100,frameRateScaled);
+  return firstTimeTGT + UMulDiv(frame,1000*100,frameRateScaled);
 }
 
 MMRESULT __stdcall Mine_timeGetSystemTime(MMTIME *pmmt,UINT cbmmt)
@@ -111,12 +135,9 @@ MMRESULT __stdcall Mine_timeGetSystemTime(MMTIME *pmmt,UINT cbmmt)
 void __stdcall Mine_GetSystemTimeAsFileTime(FILETIME *time)
 {
   int frame = getFrameTiming();
-  static FILETIME firstTime = { 0 };
+  seedAllTimers();
 
-  if(!frame)
-    Real_GetSystemTimeAsFileTime(&firstTime);
-
-  LONGLONG baseTime = *((LONGLONG *) &firstTime);
+  LONGLONG baseTime = *((LONGLONG *) &firstTimeGSTAFT);
   LONGLONG elapsedSince = ULongMulDiv(1000000000,frame,frameRateScaled);
   LONGLONG finalTime = baseTime + elapsedSince;
 
@@ -364,7 +385,7 @@ DWORD __stdcall Mine_MsgWaitForMultipleObjects(DWORD nCount,CONST HANDLE *lpHand
 static int currentFrame = 0;
 static int realStartTime = 0;
 
-static void __cdecl stuckThreadProc(void *arg)
+static unsigned int __stdcall stuckThreadProc(void *arg)
 {
   HANDLE handles[2];
 
@@ -373,10 +394,12 @@ static void __cdecl stuckThreadProc(void *arg)
 
   while(Real_WaitForMultipleObjects(2,handles,FALSE,INFINITE) != WAIT_OBJECT_0)
   {
-    printLog("timing: frame timed out, advancing time manually...\n");
+    printLog("timing: frame %d timed out, advancing time manually...\n", currentFrame);
     skipFrame();
     //nextFrame();
   }
+
+  return 0;
 }
 
 void initTiming()
@@ -391,6 +414,7 @@ void initTiming()
 
   memset(EventTimer,0,sizeof(EventTimer));
   InitializeCriticalSection(&TimerAllocLock);
+  InitializeCriticalSection(&TimerSeedLock);
 
   LARGE_INTEGER freq;
   QueryPerformanceFrequency(&freq);
@@ -410,7 +434,7 @@ void initTiming()
   DetourFunctionWithTrampoline((PBYTE) Real_timeKillEvent, (PBYTE) Mine_timeKillEvent);
   DetourFunctionWithTrampoline((PBYTE) Real_SetTimer, (PBYTE) Mine_SetTimer);
 
-  stuckThread = (HANDLE) _beginthread(stuckThreadProc,0,0);
+  stuckThread = (HANDLE) _beginthreadex(0,0,stuckThreadProc,0,0,0);
 }
 
 void doneTiming()
@@ -440,6 +464,11 @@ void doneTiming()
   EnterCriticalSection(&TimerAllocLock);
   LeaveCriticalSection(&TimerAllocLock);
   DeleteCriticalSection(&TimerAllocLock);
+  
+  EnterCriticalSection(&TimerSeedLock);
+  TimersSeeded = true;
+  LeaveCriticalSection(&TimerSeedLock);
+  DeleteCriticalSection(&TimerSeedLock);
 
   // we have to remove those, because code we call on deinitilization (especially directshow related)
   // might be using them.

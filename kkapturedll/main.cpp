@@ -124,7 +124,36 @@ static void done()
     doneVideo();
     
     delete realEncoder;
+
     printLog("main: everything ok, closing log.\n");
+    if(params.PowerDownAfterwards)
+    {
+      printLog("main: powering system down.\n");
+
+      // get token for this process
+      HANDLE hToken;
+      if(OpenProcessToken(GetCurrentProcess(),TOKEN_ADJUST_PRIVILEGES|TOKEN_QUERY,&hToken))
+      {
+        // get shutdown privilege
+        TOKEN_PRIVILEGES priv;
+        LookupPrivilegeValue(0,SE_SHUTDOWN_NAME,&priv.Privileges[0].Luid);
+        priv.PrivilegeCount = 1;
+        priv.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+        AdjustTokenPrivileges(hToken,FALSE,&priv,0,0,0);
+        if(GetLastError() == ERROR_SUCCESS)
+        {
+          if(!ExitWindowsEx(EWX_POWEROFF|EWX_FORCE,SHTDN_REASON_MAJOR_OTHER|SHTDN_REASON_MINOR_OTHER|SHTDN_REASON_FLAG_PLANNED))
+            printLog("main: shutdown command failed.\n");
+        }
+        else
+          printLog("main: failed to acquire shutdown privileges.\n");
+
+        CloseHandle(hToken);
+      }
+      else
+        printLog("main: couldn't aquire process token, can't power off.\n");
+    }
 
     closeLog();
     initialized = false;
@@ -140,14 +169,9 @@ static void init()
 
   InitializeCriticalSection(&shuttingDown);
 
+  // initialize params with all zero (ahem)
   initLog();
   printLog("main: initializing...\n");
-  initTiming();
-  initVideo();
-  initSound();
-  printLog("main: all main components initialized.\n");
-
-  // initialize params with all zero (ahem)
   memset(&params,0,sizeof(params));
 
   // get file mapping containing capturing info
@@ -161,13 +185,6 @@ static void init()
       if(block->VersionTag == PARAMVERSION)
       {
         memcpy(&params,block,sizeof(params));
-
-        printLog("main: reading parameter block...\n");
-
-        frameRateScaled = block->FrameRate;
-        encoder = createVideoEncoder(block->FileName);
-        printLog("main: video encoder initialized.\n");
-
         error = false;
       }
 
@@ -177,12 +194,68 @@ static void init()
     CloseHandle(hMapping);
   }
 
+  // if kkapture is being debugged, wait for the user to attach the debugger to this process
+  if(params.IsDebugged)
+  {
+    // create message window
+    HWND waiting = CreateWindowEx(0,"STATIC",
+      "Please attach debugger now.",WS_POPUP|WS_DLGFRAME|SS_CENTER|SS_CENTERIMAGE,0,0,240,50,0,0,
+      GetModuleHandle(0),0);
+    SendMessage(waiting,WM_SETFONT,(WPARAM) GetStockObject(DEFAULT_GUI_FONT),TRUE);
+
+    // center it
+    RECT rcWork,rcDlg;
+    SystemParametersInfo(SPI_GETWORKAREA,0,&rcWork,0);
+    GetWindowRect(waiting,&rcDlg);
+    SetWindowPos(waiting,0,(rcWork.left+rcWork.right-rcDlg.right+rcDlg.left)/2,
+      (rcWork.top+rcWork.bottom-rcDlg.bottom+rcDlg.top)/2,-1,-1,SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+
+    // show it and wait for user to attach debugger
+    ShowWindow(waiting,SW_SHOW);
+
+    while(!IsDebuggerPresent())
+    {
+      MSG msg;
+
+      while(PeekMessage(&msg,0,0,0,PM_REMOVE))
+      {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+      }
+      
+      Sleep(10);
+    }
+
+    // user has attached the debugger, bring window to foreground then destroy it
+    SetForegroundWindow(waiting);
+    ShowWindow(waiting,SW_HIDE);
+
+    MessageBox(waiting,"Debugger attached, set any breakpoints etc. you need to and press OK.","kkapture",
+      MB_ICONINFORMATION|MB_OK);
+
+    DestroyWindow(waiting);
+  }
+
+  // rest of initialization code
+  initTiming();
+  initVideo();
+  initSound();
+  printLog("main: all main components initialized.\n");
+
   if(error)
   {
     printLog("main: couldn't access parameter block or wrong version");
 
     frameRateScaled = 1000;
     encoder = new DummyVideoEncoder;
+  }
+  else
+  {
+    printLog("main: reading parameter block...\n");
+
+    frameRateScaled = params.FrameRate;
+    encoder = createVideoEncoder(params.FileName);
+    printLog("main: video encoder initialized.\n");
   }
 
   // install our hook so we get notified of process exit (hopefully)

@@ -168,7 +168,7 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
 
       SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_ADDSTRING,0,(LPARAM) ".BMP/.WAV writer");
       SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_ADDSTRING,0,(LPARAM) ".AVI (VfW, segmented)");
-      SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_ADDSTRING,0,(LPARAM) ".AVI (DirectShow, OpenDML)");
+      SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_ADDSTRING,0,(LPARAM) ".AVI (DirectShow, *unstable*)");
       SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_SETCURSEL,Params.Encoder - 1,0);
 
       EnableDlgItem(hWndDlg,IDC_VIDEOCODEC,Params.Encoder != BMPEncoder);
@@ -265,11 +265,11 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
             return TRUE;
           }
 
-          Params.FirstFrameTimeout = fft*1000;
-          Params.FrameTimeout = oft*1000;
+          Params.FirstFrameTimeout = DWORD(fft*1000);
+          Params.FrameTimeout = DWORD(oft*1000);
         }
 
-        Params.FrameRate = frameRate * 100;
+        Params.FrameRate = int(frameRate * 100);
         Params.Encoder = (EncoderType) (1 + SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_GETCURSEL,0,0));
 
         Params.CaptureVideo = IsDlgButtonChecked(hWndDlg,IDC_VCAPTURE) == BST_CHECKED;
@@ -280,6 +280,7 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
         Params.NewIntercept = IsDlgButtonChecked(hWndDlg,IDC_NEWINTERCEPT) == BST_CHECKED;
         Params.FairlightHack = IsDlgButtonChecked(hWndDlg,IDC_FAIRLIGHTHACK) == BST_CHECKED;
         Params.EnableAutoSkip = autoSkip;
+        Params.PowerDownAfterwards = IsDlgButtonChecked(hWndDlg,IDC_POWERDOWN) == BST_CHECKED;
 
         // save settings for next time
         SaveSettingsToRegistry();
@@ -346,7 +347,7 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
     case IDC_ENCODER:
       if(HIWORD(wParam) == CBN_SELCHANGE)
       {
-        int selection = SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_GETCURSEL,0,0);
+        LRESULT selection = SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_GETCURSEL,0,0);
         BOOL allowCodecSelect = selection != 0;
 
         EnableDlgItem(hWndDlg,IDC_VIDEOCODEC,allowCodecSelect);
@@ -520,6 +521,8 @@ int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,i
 {
   if(DialogBox(hInstance,MAKEINTRESOURCE(IDD_MAINWIN),0,MainDialogProc))
   {
+    Params.IsDebugged = IsDebuggerPresent() != 0;
+
     // create file mapping object with parameter block
     HANDLE hParamMapping = CreateFileMapping(INVALID_HANDLE_VALUE,0,PAGE_READWRITE,
       0,sizeof(ParameterBlock),_T("__kkapture_parameter_block"));
