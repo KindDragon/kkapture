@@ -28,12 +28,31 @@
 #include <gl/gl.h>
 #pragma comment(lib,"opengl32.lib")
 
-typedef BOOL (__stdcall *PWGLSWAPINTERVALEXT)(int interval);
-typedef int (_stdcall 
-             *PWGLGETSWAPINTERVALEXT)();
+// we use the swap interval extension to disable waiting for vblank (which
+// only makes kkapturing slower) and the FBO extension to support correct
+// kkapturing on demos that use them and perform SwapBuffers while a FBO
+// is bound.
 
-PWGLSWAPINTERVALEXT wglSwapIntervalEXT = 0;
-PWGLGETSWAPINTERVALEXT wglGetSwapIntervalEXT = 0;
+#define GL_FRAMEBUFFER_EXT                     0x8D40
+#define GL_FRAMEBUFFER_BINDING_EXT             0x8CA6
+
+typedef BOOL (__stdcall *PWGLSWAPINTERVALEXT)(int interval);
+typedef int (_stdcall *PWGLGETSWAPINTERVALEXT)();
+typedef void (__stdcall *PGLBINDFRAMEBUFFEREXT)(GLenum target,GLuint renderbuffer);
+
+static PWGLSWAPINTERVALEXT wglSwapIntervalEXT = 0;
+static PWGLGETSWAPINTERVALEXT wglGetSwapIntervalEXT = 0;
+static PGLBINDFRAMEBUFFEREXT glBindFramebufferEXT = 0;
+static bool swapIntervalChecked = false;
+static bool fboChecked = false;
+static GLenum useReadBuffer = GL_FRONT;
+
+// we keep track of active HDC/HGLRC pairs so kkapture can map HDCs passed to
+// SwapBuffers to rendering contexts (kkapture may need to temporarily switch
+// rendering context to perform readback).
+stdext::hash_map<HDC,HGLRC> rcFromDC;
+
+// ---- gl framegrabbing code
 
 static void captureGLFrame()
 {
@@ -53,26 +72,31 @@ static void captureGLFrame()
     if(wglGetSwapIntervalEXT && wglSwapIntervalEXT && wglGetSwapIntervalEXT() > 0)
       wglSwapIntervalEXT(0);
 
-    // blit data into capture buffer
+    // prepare for readback
+    GLuint oldFrameBuffer;
+    GLenum oldReadBuffer;
+
+    if(glBindFramebufferEXT)
+    {
+      glGetIntegerv(GL_FRAMEBUFFER_BINDING_EXT,(GLint *) &oldFrameBuffer);
+      glBindFramebufferEXT(GL_FRAMEBUFFER_EXT,0);
+    }
+    
+    glGetIntegerv(GL_READ_BUFFER,(GLint *) &oldReadBuffer);
+    glReadBuffer(useReadBuffer);
+
+    // actual readback
     glReadPixels(0,0,captureWidth,captureHeight,GL_BGR_EXT,GL_UNSIGNED_BYTE,captureData);
+
+    // restore bindings
+    if(glBindFramebufferEXT)
+      glBindFramebufferEXT(GL_FRAMEBUFFER_EXT,oldFrameBuffer);
+    glReadBuffer(oldReadBuffer);
 
     // encode
     encoder->WriteFrame(captureData);
   }
 }
-
-/*static void initGLFromDC(HDC hdc)
-{
-  // get client rect of window
-  HWND wnd = WindowFromDC(hdc);
-  RECT rc;
-
-  if(wnd)
-  {
-    GetClientRect(wnd,&rc);
-    setCaptureResolution(rc.right-rc.left,rc.bottom-rc.top);
-  }
-}*/
 
 // trampolines
 
@@ -85,6 +109,33 @@ DETOUR_TRAMPOLINE(HGLRC __stdcall Real_wglCreateLayerContext(HDC hdc,int iLayerP
 DETOUR_TRAMPOLINE(BOOL __stdcall Real_wglMakeCurrent(HDC hdc,HGLRC hglrc), wglMakeCurrent);
 DETOUR_TRAMPOLINE(BOOL __stdcall Real_wglSwapBuffers(HDC hdc), wglSwapBuffers);
 DETOUR_TRAMPOLINE(BOOL __stdcall Real_wglSwapLayerBuffers(HDC hdc,UINT fuPlanes), wglSwapLayerBuffers);
+
+BOOL __stdcall Mine_wglMakeCurrent(HDC hdc,HGLRC hglrc);
+
+// context handling
+
+static void prepareSwapOnDC(HDC hdc,HDC &oldDC,HGLRC &oldRC)
+{
+  oldDC = wglGetCurrentDC();
+  oldRC = wglGetCurrentContext();
+
+  if(oldDC != hdc)
+  {
+    HGLRC rc = rcFromDC[hdc];
+    if(rc)
+      Mine_wglMakeCurrent(hdc,rc);
+    else
+      printLog("video/opengl: SwapBuffers called on DC with no active rendering context. This is potentially bad.\n");
+  }
+}
+
+static void finishSwapOnDC(HDC hdc,const HDC &oldDC,const HGLRC &oldRC)
+{
+  if(oldDC != hdc)
+    Mine_wglMakeCurrent(oldDC,oldRC);
+}
+
+// ---- hooked API functions follow
 
 static LONG __stdcall Mine_ChangeDisplaySettingsEx(LPCTSTR lpszDeviceName,LPDEVMODE lpDevMode,HWND hwnd,DWORD dwflags,LPVOID lParam)
 {
@@ -100,8 +151,6 @@ static LONG __stdcall Mine_ChangeDisplaySettingsEx(LPCTSTR lpszDeviceName,LPDEVM
 static HGLRC __stdcall Mine_wglCreateContext(HDC hdc)
 {
   HGLRC result = Real_wglCreateContext(hdc);
-  /*if(result)
-    initGLFromDC(hdc);*/
 
   return result;
 }
@@ -109,8 +158,6 @@ static HGLRC __stdcall Mine_wglCreateContext(HDC hdc)
 HGLRC __stdcall Mine_wglCreateLayerContext(HDC hdc,int iLayerPlane)
 {
   HGLRC result = Real_wglCreateLayerContext(hdc,iLayerPlane);
-  /*if(result)
-    initGLFromDC(hdc);*/
 
   return result;
 }
@@ -121,12 +168,32 @@ BOOL __stdcall Mine_wglMakeCurrent(HDC hdc,HGLRC hglrc)
 
   if(result)
   {
-    if(!wglSwapIntervalEXT || !wglGetSwapIntervalEXT)
+    rcFromDC[hdc] = hglrc;
+
+    // determine read buffer to use
+    PIXELFORMATDESCRIPTOR pfd;
+    if(DescribePixelFormat(hdc,GetPixelFormat(hdc),sizeof(pfd),&pfd))
+      useReadBuffer = (pfd.dwFlags & PFD_DOUBLEBUFFER) ? GL_BACK : GL_FRONT;
+
+    // determine whether swap interval extension is supported
+    if(!swapIntervalChecked && (!wglSwapIntervalEXT || !wglGetSwapIntervalEXT))
     {
       wglSwapIntervalEXT = (PWGLSWAPINTERVALEXT) wglGetProcAddress("wglSwapIntervalEXT");
       wglGetSwapIntervalEXT = (PWGLGETSWAPINTERVALEXT) wglGetProcAddress("wglGetSwapIntervalEXT");
       if(wglSwapIntervalEXT)
         printLog("video/opengl: wglSwapIntervalEXT supported\n");
+
+      swapIntervalChecked = true;
+    }
+
+    // determine whether framebuffer objects are supported
+    if(!fboChecked && !glBindFramebufferEXT)
+    {
+      glBindFramebufferEXT = (PGLBINDFRAMEBUFFEREXT) wglGetProcAddress("glBindFramebufferEXT");
+      if(glBindFramebufferEXT)
+        printLog("video/opengl: FBOs supported\n");
+
+      fboChecked = true;
     }
   }
 
@@ -135,8 +202,14 @@ BOOL __stdcall Mine_wglMakeCurrent(HDC hdc,HGLRC hglrc)
 
 static BOOL __stdcall Mine_wglSwapBuffers(HDC hdc)
 {
+  HDC olddc;
+  HGLRC oldrc;
+
+  prepareSwapOnDC(hdc,olddc,oldrc);
   captureGLFrame();
   nextFrame();
+  finishSwapOnDC(hdc,olddc,oldrc);
+
   return Real_wglSwapBuffers(hdc);
 }
 
@@ -144,8 +217,13 @@ static BOOL __stdcall Mine_wglSwapLayerBuffers(HDC hdc,UINT fuPlanes)
 {
   if(fuPlanes & WGL_SWAP_MAIN_PLANE)
   {
+    HDC olddc;
+    HGLRC oldrc;
+
+    prepareSwapOnDC(hdc,olddc,oldrc);
     captureGLFrame();
     nextFrame();
+    finishSwapOnDC(hdc,olddc,oldrc);
   }
 
   return Real_wglSwapLayerBuffers(hdc,fuPlanes);

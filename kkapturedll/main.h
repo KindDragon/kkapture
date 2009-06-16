@@ -61,6 +61,7 @@ struct ParameterBlock
   DWORD SoundMaxSkip; // in milliseconds
   BOOL MakeSleepsLastOneFrame;
   DWORD SleepTimeout;
+  BOOL NewIntercept;
 };
 
 extern ParameterBlock params;

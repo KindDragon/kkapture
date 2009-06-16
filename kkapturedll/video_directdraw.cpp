@@ -541,7 +541,7 @@ static HRESULT __stdcall Mine_DDrawSurface_Flip(IUnknown *me,IUnknown *other,DWO
 {
   if(PrimarySurfaceVersion == 1)
   {
-    //ImplementFlip(me,1);
+    ImplementFlip(me,1);
     nextFrame();
     return S_OK;
   }

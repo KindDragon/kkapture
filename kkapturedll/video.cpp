@@ -104,13 +104,13 @@ void videoStartNextPart(bool autoSize)
 int captureWidth = 0, captureHeight = 0;
 unsigned char *captureData = 0;
 
-HDC hCaptureDC = 0;
-HBITMAP hCaptureBitmap = 0;
-
 void destroyCaptureBuffer()
 {
   if(captureData)
   {
+    captureWidth = 0;
+    captureHeight = 0;
+
     delete[] captureData;
     captureData = 0;
   }
@@ -166,55 +166,6 @@ void nextFrame()
   seenFrames = true;
   nextFrameTiming();
   nextFrameSound();
-}
-
-void captureGDIFrame(HDC hDC)
-{
-  // grab via DC bitblit (fallback solution)
-  if(!hCaptureBitmap)
-  {
-    hCaptureDC = CreateCompatibleDC(hDC);
-    hCaptureBitmap = CreateCompatibleBitmap(hDC,captureWidth,captureHeight);
-    
-    if(!hCaptureDC || !hCaptureBitmap)
-    {
-      if(hCaptureDC)
-        DeleteDC(hCaptureDC);
-
-      if(hCaptureBitmap)
-        DeleteObject(hCaptureBitmap);
-
-      hCaptureDC = 0;
-      hCaptureBitmap = 0;
-    }
-    else
-      SelectObject(hCaptureDC,hCaptureBitmap);
-  }
-
-  if(hCaptureBitmap && hCaptureDC)
-  {
-    BITMAPINFOHEADER bih;
-    ZeroMemory(&bih,sizeof(bih));
-    bih.biSize = sizeof(bih);
-    bih.biWidth = captureWidth;
-    bih.biHeight = captureHeight;
-    bih.biPlanes = 1;
-    bih.biBitCount = 24;
-    bih.biCompression = BI_RGB;
-
-    BitBlt(hCaptureDC,0,0,captureWidth,captureHeight,hDC,0,0,SRCCOPY);
-    GetDIBits(hCaptureDC,hCaptureBitmap,0,captureHeight,captureData,
-      (BITMAPINFO *)&bih,DIB_RGB_COLORS);
-
-    encoder->WriteFrame(captureData);
-  }
-}
-
-void captureGDIFullScreen()
-{
-  HDC hDC = GetDC(0);
-  captureGDIFrame(hDC);
-  ReleaseDC(0,hDC);
 }
 
 static void blit32to24loop(unsigned char *dest,unsigned char *src,int count)
@@ -328,17 +279,5 @@ void initVideo()
 
 void doneVideo()
 {
-  if(hCaptureDC)
-  {
-    DeleteDC(hCaptureDC);
-    hCaptureDC = 0;
-  }
-
-  if(hCaptureBitmap)
-  {
-    DeleteObject(hCaptureBitmap);
-    hCaptureBitmap = 0;
-  }
-
   destroyCaptureBuffer();
 }

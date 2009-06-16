@@ -87,13 +87,14 @@ static void done()
       hKeyHook = 0;
     }
 
+    VideoEncoder *realEncoder = encoder;
+    encoder = 0;
+
     doneTiming();
     doneSound();
     doneVideo();
     
-    delete encoder;
-    encoder = 0;
-
+    delete realEncoder;
     printLog("main: everything ok, closing log.\n");
 
     closeLog();

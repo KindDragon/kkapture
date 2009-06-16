@@ -168,7 +168,7 @@ static HRESULT __stdcall Mine_D3DDevice8_Present(IDirect3DDevice8 *dev,DWORD a0,
   if(params.CaptureVideo)
   {
     if(!captureD3DFrame8(dev))
-      captureGDIFullScreen();
+      printLog("video/d3d8: Frame capture failed! (frame %d)\n",getFrameTiming());
   }
 
   nextFrame();

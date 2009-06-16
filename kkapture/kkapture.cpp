@@ -110,6 +110,7 @@ static void LoadSettingsFromRegistry()
   Params.Encoder = (EncoderType) RegQueryDWord(hk,_T("VideoEncoder"),AVIEncoderDShow);
   Params.VideoCodec = RegQueryDWord(hk,_T("AVIVideoCodec"),mmioFOURCC('D','I','B',' '));
   Params.VideoQuality = RegQueryDWord(hk,_T("AVIVideoQuality"),ICQUALITY_DEFAULT);
+  Params.NewIntercept = RegQueryDWord(hk,_T("NewIntercept"),0);
 
   if(hk)
     RegCloseKey(hk);
@@ -125,6 +126,7 @@ static void SaveSettingsToRegistry()
     RegSetDWord(hk,_T("VideoEncoder"),Params.Encoder);
     RegSetDWord(hk,_T("AVIVideoCodec"),Params.VideoCodec);
     RegSetDWord(hk,_T("AVIVideoQuality"),Params.VideoQuality);
+    RegSetDWord(hk,_T("NewIntercept"),Params.NewIntercept);
     RegCloseKey(hk);
   }
 }
@@ -163,6 +165,8 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
         CheckDlgButton(hWndDlg,IDC_NEWINTERCEPT,BST_CHECKED);
         EnableDlgItem(hWndDlg,IDC_NEWINTERCEPT,FALSE);
       }
+      else
+        CheckDlgButton(hWndDlg,IDC_NEWINTERCEPT,Params.NewIntercept ? BST_CHECKED : BST_UNCHECKED);
 
       HIC codec = ICOpen(ICTYPE_VIDEO,Params.VideoCodec,ICMODE_QUERY);
       SetVideoCodecInfo(hWndDlg,codec);
@@ -221,6 +225,7 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
         Params.SoundMaxSkip = IsDlgButtonChecked(hWndDlg,IDC_SKIPSILENCE) == BST_CHECKED ? 10 : 0;
         Params.MakeSleepsLastOneFrame = IsDlgButtonChecked(hWndDlg,IDC_SLEEPLAST) == BST_CHECKED;
         Params.SleepTimeout = 2500; // yeah, this should be configurable
+        Params.NewIntercept = IsDlgButtonChecked(hWndDlg,IDC_NEWINTERCEPT) == BST_CHECKED;
 
         // save settings for next time
         SaveSettingsToRegistry();
@@ -361,7 +366,7 @@ static DWORD GetEntryPoint(TCHAR *fileName)
 
   if(nthdr.Signature != IMAGE_NT_SIGNATURE
     || nthdr.FileHeader.Machine != IMAGE_FILE_MACHINE_I386
-    || nthdr.FileHeader.SizeOfOptionalHeader != IMAGE_SIZEOF_NT_OPTIONAL32_HEADER
+    /*|| nthdr.FileHeader.SizeOfOptionalHeader != IMAGE_SIZEOF_NT_OPTIONAL32_HEADER*/
     || nthdr.OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC
     || !nthdr.OptionalHeader.AddressOfEntryPoint)
     return 0;
@@ -374,7 +379,7 @@ static bool PrepareInstrumentation(HANDLE hProcess,BYTE *workArea,TCHAR *dllName
   BYTE origCode[24];
   struct bufferType
   {
-    BYTE code[2048];
+    BYTE code[2048]; // code must be first field
     BYTE data[2048];
   } buffer;
   BYTE jumpCode[5];
@@ -395,13 +400,30 @@ static bool PrepareInstrumentation(HANDLE hProcess,BYTE *workArea,TCHAR *dllName
   code = DetourGenCall(code,loadLibrary,workArea + (code - buffer.code));
   code = DetourGenPopad(code);
 
-  // Copy over first few bytes from startup code
+  // Check whether startup code begins with a call or jump
   BYTE *sourcePtr = origCode;
 
-  while((sourcePtr - origCode) < sizeof(jumpCode))
-    sourcePtr = DetourCopyInstruction(code + (sourcePtr - origCode),sourcePtr,0);
+  if(sourcePtr[0] == 0xe8 || sourcePtr[0] == 0xe9) // Yes, we can jump/call there too
+  {
+    // Copy the opcode
+    *code++ = *sourcePtr++;
 
-  code += sourcePtr - origCode;
+    // Copy target address, compensating for offset
+    *((DWORD *) code) = *((DWORD *) sourcePtr)
+      + entryPoint + (sourcePtr - origCode) + 4 // add back original position
+      - (workArea + (code - buffer.code) + 4);  // subtract new position
+
+    code += 4;
+    sourcePtr += 4;
+  }
+  else // No, we have to copy instructions
+  {
+    // Copy over first few bytes from startup code
+    while((sourcePtr - origCode) < sizeof(jumpCode))
+      sourcePtr = DetourCopyInstruction(code + (sourcePtr - origCode),sourcePtr,0);
+
+    code += sourcePtr - origCode;
+  }
 
   // Jump to rest
   code = DetourGenJmp(code,entryPoint + (sourcePtr - origCode),workArea + (code - buffer.code));
@@ -462,36 +484,50 @@ int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,i
     _tmakepath(exepath,drive,dir,_T(""),_T(""));
     SetCurrentDirectory(exepath);
 
-    /*if(DetourCreateProcessWithDll(ExeName,commandLine,0,0,TRUE,
-      CREATE_DEFAULT_ERROR_MODE,0,0,&si,&pi,0,0,0))*/
-    DWORD entryPoint = GetEntryPoint(ExeName);
-    if(!entryPoint)
-      MessageBox(0,_T("Not a supported executable format."),
-        _T(".kkapture"),MB_ICONERROR|MB_OK);
-    else if(CreateProcess(ExeName,commandLine,0,0,TRUE,
-      CREATE_DEFAULT_ERROR_MODE|CREATE_SUSPENDED,0,0,&si,&pi))
+    if(!Params.NewIntercept)
     {
-      // get some memory in the target processes' space for us to work with
-      void *workMem = VirtualAllocEx(pi.hProcess,0,4096,MEM_COMMIT,
-        PAGE_EXECUTE_READWRITE);
-
-      // do all the mean initialization faking code here
-      if(PrepareInstrumentation(pi.hProcess,(BYTE *) workMem,dllpath,entryPoint))
+      if(DetourCreateProcessWithDll(ExeName,commandLine,0,0,TRUE,
+        CREATE_DEFAULT_ERROR_MODE,0,0,&si,&pi,dllpath,0))
       {
-        // we're done with our evil machinations, so rock on
-        ResumeThread(pi.hThread);
-
         // wait for target process to finish
         WaitForSingleObject(pi.hProcess,INFINITE);
         CloseHandle(pi.hProcess);
       }
       else
-        MessageBox(0,_T("Startup instrumentation failed"),
-        _T(".kkapture"),MB_ICONERROR|MB_OK);
+        MessageBox(0,_T("Couldn't execute target process"),
+          _T(".kkapture"),MB_ICONERROR|MB_OK);
     }
     else
-      MessageBox(0,_T("Couldn't execute target process"),
-        _T(".kkapture"),MB_ICONERROR|MB_OK);
+    {
+      DWORD entryPoint = GetEntryPoint(ExeName);
+      if(!entryPoint)
+        MessageBox(0,_T("Not a supported executable format."),
+          _T(".kkapture"),MB_ICONERROR|MB_OK);
+      else if(CreateProcess(ExeName,commandLine,0,0,TRUE,
+        CREATE_DEFAULT_ERROR_MODE|CREATE_SUSPENDED,0,0,&si,&pi))
+      {
+        // get some memory in the target processes' space for us to work with
+        void *workMem = VirtualAllocEx(pi.hProcess,0,4096,MEM_COMMIT,
+          PAGE_EXECUTE_READWRITE);
+
+        // do all the mean initialization faking code here
+        if(PrepareInstrumentation(pi.hProcess,(BYTE *) workMem,dllpath,entryPoint))
+        {
+          // we're done with our evil machinations, so rock on
+          ResumeThread(pi.hThread);
+
+          // wait for target process to finish
+          WaitForSingleObject(pi.hProcess,INFINITE);
+          CloseHandle(pi.hProcess);
+        }
+        else
+          MessageBox(0,_T("Startup instrumentation failed"),
+          _T(".kkapture"),MB_ICONERROR|MB_OK);
+      }
+      else
+        MessageBox(0,_T("Couldn't execute target process"),
+          _T(".kkapture"),MB_ICONERROR|MB_OK);
+    }
 
     // cleanup
     CloseHandle(hParamMapping);
