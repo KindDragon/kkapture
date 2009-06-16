@@ -1,5 +1,24 @@
-// kkapture: intrusive demo video capturing.
-// by fabian "ryg/farbrausch" giesen 2005.
+/* kkapture: intrusive demo video capturing.
+ * Copyright (c) 2005-2006 Fabian "ryg/farbrausch" Giesen.
+ *
+ * This program is free software; you can redistribute and/or modify it under
+ * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
+ * any later version; all distributions of this program should contain this
+ * license in a file named "LICENSE.txt".
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT UNLESS REQUIRED BY
+ * LAW OR AGREED TO IN WRITING WILL ANY COPYRIGHT HOLDER OR CONTRIBUTOR
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+ * OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 #include "stdafx.h"
 #include "bmp_videoencoder.h"
@@ -76,7 +95,7 @@ void BMPVideoEncoder::WriteFrame(const unsigned char *buffer)
   {
     // create filename
     char filename[512];
-    sprintf(filename,"%s%04d.bmp",prefix,frame);
+    _snprintf_s(filename,sizeof(filename)/sizeof(*filename),"%s%04d.bmp",prefix,frame);
 
     // create file, write headers+image
     FILE *f = fopen(filename,"wb");
@@ -95,8 +114,8 @@ void BMPVideoEncoder::SetAudioFormat(const tWAVEFORMATEX *fmt)
   if(params.CaptureAudio && !intn->wave)
   {
     char filename[512];
-    strcpy(filename,prefix);
-    strcat(filename,".wav");
+    strcpy_s(filename,prefix);
+    strcat_s(filename,".wav");
 
     intn->wfx = *fmt;
     intn->wave = fopen(filename,"wb");
@@ -121,6 +140,14 @@ void BMPVideoEncoder::SetAudioFormat(const tWAVEFORMATEX *fmt)
     for(int samplePos=0;samplePos<sampleFill;samplePos+=1024)
       WriteAudioFrame(buffer,min(sampleFill-samplePos,1024));
   }
+}
+
+void BMPVideoEncoder::GetAudioFormat(tWAVEFORMATEX *fmt)
+{
+  if(intn->wave)
+    *fmt = intn->wfx;
+  else
+    ZeroMemory(fmt,sizeof(tWAVEFORMATEX));
 }
 
 void BMPVideoEncoder::WriteAudioFrame(const void *buffer,int samples)

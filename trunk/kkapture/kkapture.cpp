@@ -1,9 +1,29 @@
-// kkapture: intrusive demo video capturing.
-// by fabian "ryg/farbrausch" giesen 2005.
+/* kkapture: intrusive demo video capturing.
+ * Copyright (c) 2005-2006 Fabian "ryg/farbrausch" Giesen.
+ *
+ * This program is free software; you can redistribute and/or modify it under
+ * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
+ * any later version; all distributions of this program should contain this
+ * license in a file named "LICENSE.txt".
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT UNLESS REQUIRED BY
+ * LAW OR AGREED TO IN WRITING WILL ANY COPYRIGHT HOLDER OR CONTRIBUTOR
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+ * OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 #include "stdafx.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include <tchar.h>
 #include "../kkapturedll/main.h"
 #include "resource.h"
@@ -20,19 +40,28 @@ static TCHAR Arguments[MAX_ARGS];
 static ParameterBlock Params;
 
 // some dialog helpers
-static int GetCheckedRadioButton(HWND hWnd,int ctrlFirst,int ctrlLast)
-{
-  for(int i=ctrlFirst;i<=ctrlLast;i++)
-    if(IsDlgButtonChecked(hWnd,i))
-      return i - ctrlFirst;
-
-  return -1;
-}
-
 static BOOL EnableDlgItem(HWND hWnd,int id,BOOL bEnable)
 {
   HWND hCtrlWnd = GetDlgItem(hWnd,id);
   return EnableWindow(hCtrlWnd,bEnable);
+}
+
+static BOOL IsWow64()
+{
+  typedef BOOL (WINAPI *LPFN_ISWOW64PROCESS) (HANDLE, PBOOL);
+  LPFN_ISWOW64PROCESS IsWow64Process = (LPFN_ISWOW64PROCESS) 
+    GetProcAddress(GetModuleHandle(_T("kernel32")),_T("IsWow64Process"));
+
+  if(IsWow64Process)
+  {
+    BOOL result;
+    if(!IsWow64Process(GetCurrentProcess(),&result))
+      result = FALSE;
+
+    return result;
+  }
+  else
+    return FALSE;
 }
 
 static void SetVideoCodecInfo(HWND hWndDlg,HIC codec)
@@ -78,7 +107,7 @@ static void LoadSettingsFromRegistry()
     hk = 0;
 
   Params.FrameRate = RegQueryDWord(hk,_T("FrameRate"),6000);
-  Params.Encoder = (EncoderType) RegQueryDWord(hk,_T("VideoEncoder"),AVIEncoder);
+  Params.Encoder = (EncoderType) RegQueryDWord(hk,_T("VideoEncoder"),AVIEncoderDShow);
   Params.VideoCodec = RegQueryDWord(hk,_T("AVIVideoCodec"),mmioFOURCC('D','I','B',' '));
   Params.VideoQuality = RegQueryDWord(hk,_T("AVIVideoQuality"),ICQUALITY_DEFAULT);
 
@@ -121,9 +150,19 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
       _stprintf(buffer,"%d.%02d",Params.FrameRate/100,Params.FrameRate%100);
       SetDlgItemText(hWndDlg,IDC_FRAMERATE,buffer);
 
-      CheckRadioButton(hWndDlg,IDC_ENCODER1,IDC_ENCODER2,IDC_ENCODER1+Params.Encoder-1);
-      EnableDlgItem(hWndDlg,IDC_VIDEOCODEC,Params.Encoder == AVIEncoder);
-      EnableDlgItem(hWndDlg,IDC_VCPICK,Params.Encoder == AVIEncoder);
+      SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_ADDSTRING,0,(LPARAM) ".BMP/.WAV writer");
+      SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_ADDSTRING,0,(LPARAM) ".AVI (VfW, segmented)");
+      SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_ADDSTRING,0,(LPARAM) ".AVI (DirectShow, OpenDML)");
+      SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_SETCURSEL,Params.Encoder - 1,0);
+
+      EnableDlgItem(hWndDlg,IDC_VIDEOCODEC,Params.Encoder != BMPEncoder);
+      EnableDlgItem(hWndDlg,IDC_VCPICK,Params.Encoder != BMPEncoder);
+
+      if(IsWow64())
+      {
+        CheckDlgButton(hWndDlg,IDC_NEWINTERCEPT,BST_CHECKED);
+        EnableDlgItem(hWndDlg,IDC_NEWINTERCEPT,FALSE);
+      }
 
       HIC codec = ICOpen(ICTYPE_VIDEO,Params.VideoCodec,ICMODE_QUERY);
       SetVideoCodecInfo(hWndDlg,codec);
@@ -175,7 +214,7 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
         }
 
         Params.FrameRate = frameRate * 100;
-        Params.Encoder = (EncoderType) (BMPEncoder + GetCheckedRadioButton(hWndDlg,IDC_ENCODER1,IDC_ENCODER2));
+        Params.Encoder = (EncoderType) (1 + SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_GETCURSEL,0,0));
 
         Params.CaptureVideo = IsDlgButtonChecked(hWndDlg,IDC_VCAPTURE) == BST_CHECKED;
         Params.CaptureAudio = IsDlgButtonChecked(hWndDlg,IDC_ACAPTURE) == BST_CHECKED;
@@ -245,13 +284,14 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
       }
       return TRUE;
 
-    case IDC_ENCODER1:
-    case IDC_ENCODER2:
+    case IDC_ENCODER:
+      if(HIWORD(wParam) == CBN_SELCHANGE)
       {
-        BOOL useAviEncoder = LOWORD(wParam) == IDC_ENCODER2;
+        int selection = SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_GETCURSEL,0,0);
+        BOOL allowCodecSelect = selection != 0;
 
-        EnableDlgItem(hWndDlg,IDC_VIDEOCODEC,useAviEncoder);
-        EnableDlgItem(hWndDlg,IDC_VCPICK,useAviEncoder);
+        EnableDlgItem(hWndDlg,IDC_VIDEOCODEC,allowCodecSelect);
+        EnableDlgItem(hWndDlg,IDC_VCPICK,allowCodecSelect);
       }
       return TRUE;
 
@@ -280,6 +320,105 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
 
   return FALSE;
 }
+
+// ----
+
+static DWORD GetEntryPoint(TCHAR *fileName)
+{
+  IMAGE_DOS_HEADER doshdr;
+  IMAGE_NT_HEADERS32 nthdr;
+  DWORD read;
+
+  HANDLE hFile = CreateFile(fileName,GENERIC_READ,FILE_SHARE_READ,0,OPEN_EXISTING,0,0);
+  if(hFile == INVALID_HANDLE_VALUE)
+    return 0;
+
+  if(!ReadFile(hFile,&doshdr,sizeof(doshdr),&read,0) || read != sizeof(doshdr))
+  {
+    CloseHandle(hFile);
+    return 0;
+  }
+
+  if(doshdr.e_magic != IMAGE_DOS_SIGNATURE)
+  {
+    CloseHandle(hFile);
+    return 0;
+  }
+
+  if(SetFilePointer(hFile,doshdr.e_lfanew,0,FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+  {
+    CloseHandle(hFile);
+    return 0;
+  }
+
+  if(!ReadFile(hFile,&nthdr,sizeof(nthdr),&read,0) || read != sizeof(nthdr))
+  {
+    CloseHandle(hFile);
+    return 0;
+  }
+
+  CloseHandle(hFile);
+
+  if(nthdr.Signature != IMAGE_NT_SIGNATURE
+    || nthdr.FileHeader.Machine != IMAGE_FILE_MACHINE_I386
+    || nthdr.FileHeader.SizeOfOptionalHeader != IMAGE_SIZEOF_NT_OPTIONAL32_HEADER
+    || nthdr.OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC
+    || !nthdr.OptionalHeader.AddressOfEntryPoint)
+    return 0;
+
+  return nthdr.OptionalHeader.ImageBase + nthdr.OptionalHeader.AddressOfEntryPoint;
+}
+
+static bool PrepareInstrumentation(HANDLE hProcess,BYTE *workArea,TCHAR *dllName,DWORD entryPointAddr)
+{
+  BYTE origCode[24];
+  struct bufferType
+  {
+    BYTE code[2048];
+    BYTE data[2048];
+  } buffer;
+  BYTE jumpCode[5];
+
+  DWORD offsWorkArea = (DWORD) workArea;
+  BYTE *code = buffer.code;
+  BYTE *loadLibrary = (BYTE *) GetProcAddress(GetModuleHandle(_T("kernel32.dll")),"LoadLibraryA");
+  BYTE *entryPoint = (BYTE *) entryPointAddr;
+
+  // Read original startup code
+  if(!ReadProcessMemory(hProcess,entryPoint,origCode,sizeof(origCode),0))
+    return false;
+
+  // Generate Initialization hook
+  code = DetourGenPushad(code);
+  _tcscpy((TCHAR *) buffer.data,dllName);
+  code = DetourGenPush(code,offsWorkArea + offsetof(bufferType,data));
+  code = DetourGenCall(code,loadLibrary,workArea + (code - buffer.code));
+  code = DetourGenPopad(code);
+
+  // Copy over first few bytes from startup code
+  BYTE *sourcePtr = origCode;
+
+  while((sourcePtr - origCode) < sizeof(jumpCode))
+    sourcePtr = DetourCopyInstruction(code + (sourcePtr - origCode),sourcePtr,0);
+
+  code += sourcePtr - origCode;
+
+  // Jump to rest
+  code = DetourGenJmp(code,entryPoint + (sourcePtr - origCode),workArea + (code - buffer.code));
+
+  // And prepare jump to init hook from original entry point
+  DetourGenJmp(jumpCode,workArea,entryPoint);
+
+  // Finally, write everything into process memory
+  if(!WriteProcessMemory(hProcess,workArea,&buffer,sizeof(buffer),0)
+    || !WriteProcessMemory(hProcess,entryPoint,jumpCode,sizeof(jumpCode),0)
+    || !FlushInstructionCache(hProcess,entryPoint,sizeof(jumpCode)))
+    return false;
+
+  return true;
+}
+
+// ----
 
 int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,int nCmdShow)
 {
@@ -323,12 +462,32 @@ int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,i
     _tmakepath(exepath,drive,dir,_T(""),_T(""));
     SetCurrentDirectory(exepath);
 
-    if(DetourCreateProcessWithDll(ExeName,commandLine,0,0,TRUE,
-      CREATE_DEFAULT_ERROR_MODE,0,0,&si,&pi,dllpath,0))
+    /*if(DetourCreateProcessWithDll(ExeName,commandLine,0,0,TRUE,
+      CREATE_DEFAULT_ERROR_MODE,0,0,&si,&pi,0,0,0))*/
+    DWORD entryPoint = GetEntryPoint(ExeName);
+    if(!entryPoint)
+      MessageBox(0,_T("Not a supported executable format."),
+        _T(".kkapture"),MB_ICONERROR|MB_OK);
+    else if(CreateProcess(ExeName,commandLine,0,0,TRUE,
+      CREATE_DEFAULT_ERROR_MODE|CREATE_SUSPENDED,0,0,&si,&pi))
     {
-      // wait for target process to finish
-      WaitForSingleObject(pi.hProcess,INFINITE);
-      CloseHandle(pi.hProcess);
+      // get some memory in the target processes' space for us to work with
+      void *workMem = VirtualAllocEx(pi.hProcess,0,4096,MEM_COMMIT,
+        PAGE_EXECUTE_READWRITE);
+
+      // do all the mean initialization faking code here
+      if(PrepareInstrumentation(pi.hProcess,(BYTE *) workMem,dllpath,entryPoint))
+      {
+        // we're done with our evil machinations, so rock on
+        ResumeThread(pi.hThread);
+
+        // wait for target process to finish
+        WaitForSingleObject(pi.hProcess,INFINITE);
+        CloseHandle(pi.hProcess);
+      }
+      else
+        MessageBox(0,_T("Startup instrumentation failed"),
+        _T(".kkapture"),MB_ICONERROR|MB_OK);
     }
     else
       MessageBox(0,_T("Couldn't execute target process"),

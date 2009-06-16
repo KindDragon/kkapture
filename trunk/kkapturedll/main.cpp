@@ -1,14 +1,31 @@
-// kkapture: intrusive demo video capturing.
-// by fabian "ryg/farbrausch" giesen 2005.
+/* kkapture: intrusive demo video capturing.
+ * Copyright (c) 2005-2006 Fabian "ryg/farbrausch" Giesen.
+ *
+ * This program is free software; you can redistribute and/or modify it under
+ * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
+ * any later version; all distributions of this program should contain this
+ * license in a file named "LICENSE.txt".
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT UNLESS REQUIRED BY
+ * LAW OR AGREED TO IN WRITING WILL ANY COPYRIGHT HOLDER OR CONTRIBUTOR
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+ * OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 #include "stdafx.h"
 #include "tchar.h"
-#include "bmp_videoencoder.h"
-#include "avi_videoencoder.h"
 #include <stdio.h>
 
 #include "video.h"
-#include "ui_control.h"
+#include "videoencoder.h"
 
 VideoEncoder *encoder = 0;
 float frameRate = 10;
@@ -17,8 +34,43 @@ ParameterBlock params;
 
 static CRITICAL_SECTION shuttingDown;
 static bool initialized = false;
+static HHOOK hKeyHook = 0;
 
-void done()
+// ---- forwards
+
+static void done();
+static void init();
+
+// ---- API hooks
+
+DETOUR_TRAMPOLINE(void __stdcall Real_ExitProcess(UINT uExitCode), ExitProcess);
+
+void __stdcall Mine_ExitProcess(UINT uExitCode)
+{
+  done();
+  Real_ExitProcess(uExitCode);
+}
+
+LRESULT CALLBACK KeyboardHook(int code,WPARAM wParam,LPARAM lParam)
+{
+  bool wannaExit = false;
+
+  if(code == HC_ACTION && wParam == VK_CANCEL) // ctrl+break
+    wannaExit = true;
+
+  LRESULT result = CallNextHookEx(hKeyHook,code,wParam,lParam);
+  if(wannaExit)
+  {
+    printLog("main: ctrl+break pressed, stopping recording...\n");
+    Mine_ExitProcess(0);
+  }
+
+  return result;
+}
+
+// ---- public interface
+
+static void done()
 {
   if(!initialized)
     return;
@@ -29,7 +81,12 @@ void done()
   {
     printLog("main: shutting down...\n");
 
-    doneUIControl();
+    if(hKeyHook)
+    {
+      UnhookWindowsHookEx(hKeyHook);
+      hKeyHook = 0;
+    }
+
     doneTiming();
     doneSound();
     doneVideo();
@@ -47,15 +104,7 @@ void done()
   DeleteCriticalSection(&shuttingDown);
 }
 
-DETOUR_TRAMPOLINE(void __stdcall Real_ExitProcess(UINT uExitCode), ExitProcess);
-
-void __stdcall Mine_ExitProcess(UINT uExitCode)
-{
-  done();
-  Real_ExitProcess(uExitCode);
-}
-
-void init()
+static void init()
 {
   bool error = true;
 
@@ -66,7 +115,7 @@ void init()
   initTiming();
   initVideo();
   initSound();
-  initUIControl();
+  printLog("main: all main components initialized.\n");
 
   // initialize params with all zero (ahem)
   memset(&params,0,sizeof(params));
@@ -83,13 +132,11 @@ void init()
       {
         memcpy(&params,block,sizeof(params));
 
+        printLog("main: reading parameter block...\n");
+
         frameRateScaled = block->FrameRate;
-        if(block->Encoder == AVIEncoder)
-          encoder = new AVIVideoEncoder(block->FileName,frameRateScaled/100.0f,block->VideoCodec,block->VideoQuality);
-        else if(block->Encoder == BMPEncoder)
-          encoder = new BMPVideoEncoder(block->FileName);
-        else
-          encoder = new DummyVideoEncoder;
+        encoder = createVideoEncoder(block->FileName);
+        printLog("main: video encoder initialized.\n");
 
         error = false;
       }
@@ -110,9 +157,12 @@ void init()
 
   // install our hook so we get notified of process exit (hopefully)
   DetourFunctionWithTrampoline((PBYTE) Real_ExitProcess, (PBYTE) Mine_ExitProcess);
+  hKeyHook = SetWindowsHookEx(WH_KEYBOARD,KeyboardHook,GetModuleHandle(0),0);
 
   frameRate = frameRateScaled / 100.0f;
   initialized = true;
+
+  printLog("main: initialization done\n");
 }
 
 BOOL APIENTRY DllMain(HINSTANCE hModule, DWORD dwReason, PVOID lpReserved)
