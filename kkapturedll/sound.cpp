@@ -1,5 +1,24 @@
-// kkapture: intrusive demo video capturing.
-// by fabian "ryg/farbrausch" giesen 2005.
+/* kkapture: intrusive demo video capturing.
+ * Copyright (c) 2005-2006 Fabian "ryg/farbrausch" Giesen.
+ *
+ * This program is free software; you can redistribute and/or modify it under
+ * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
+ * any later version; all distributions of this program should contain this
+ * license in a file named "LICENSE.txt".
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT UNLESS REQUIRED BY
+ * LAW OR AGREED TO IN WRITING WILL ANY COPYRIGHT HOLDER OR CONTRIBUTOR
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+ * OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 #include "stdafx.h"
 #include <malloc.h>
@@ -131,6 +150,135 @@ public:
   }
 };
 
+class MyDirectSound3DBuffer8 : public IDirectSound3DBuffer8
+{
+  int RefCount;
+
+public:
+  MyDirectSound3DBuffer8()
+    : RefCount(1)
+  {
+  }
+
+  // IUnknown methods
+  virtual HRESULT __stdcall QueryInterface(REFIID iid,LPVOID *ptr)
+  {
+    if(iid == IID_IDirectSound3DBuffer || iid == IID_IDirectSound3DListener8)
+    {
+      *ptr = this;
+      AddRef();
+      return S_OK;
+    }
+    else
+      return E_NOINTERFACE;
+  }
+
+  virtual ULONG __stdcall AddRef()
+  {
+    return ++RefCount;
+  }
+
+  virtual ULONG __stdcall Release()
+  {
+    ULONG ret = --RefCount;
+    if(!RefCount)
+      delete this;
+
+    return ret;
+  }
+
+  // IDirectSound3DBuffer methods
+  virtual HRESULT __stdcall GetAllParameters(LPDS3DBUFFER pDs3dBuffer)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall GetConeAngles(LPDWORD pdwInsideConeAngle, LPDWORD pdwOutsideConeAngle)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall GetConeOrientation(D3DVECTOR *pvOrientation)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall GetConeOutsideVolume(LPLONG plConeOutsideVolume)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall GetMaxDistance(D3DVALUE *pflMaxDistance)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall GetMinDistance(D3DVALUE *pflMaxDistance)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall GetMode(LPDWORD pdwMode)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall GetPosition(D3DVECTOR *pvPosition)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall GetVelocity(D3DVECTOR *pvVelocity)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall SetAllParameters(LPCDS3DBUFFER pDs3dBuffer, DWORD dwApply)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall SetConeAngles(DWORD dwInsideConeAngle, DWORD dwOutsideConeAngle, DWORD dwApply)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall SetConeOrientation(D3DVALUE x, D3DVALUE y, D3DVALUE z, DWORD dwApply)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall SetConeOutsideVolume(LONG lConeOutsideVolume, DWORD dwApply)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall SetMaxDistance(D3DVALUE flMaxDistance, DWORD dwApply)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall SetMinDistance(D3DVALUE flMaxDistance, DWORD dwApply)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall SetMode(DWORD dwMode, DWORD dwApply)
+  {
+    return E_NOTIMPL;
+  }
+  
+  virtual HRESULT __stdcall SetPosition(D3DVALUE x, D3DVALUE y, D3DVALUE z, DWORD dwApply)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall SetVelocity(D3DVALUE x, D3DVALUE y, D3DVALUE z, DWORD dwApply)
+  {
+    return E_NOTIMPL;
+  }
+};
+
 class MyDirectSoundBuffer8 : public IDirectSoundBuffer8
 {
   int RefCount;
@@ -219,6 +367,11 @@ public:
     else if(iid == IID_IDirectSound3DListener || iid == IID_IDirectSound3DListener8)
     {
       *ptr = new MyDirectSound3DListener8;
+      return S_OK;
+    }
+    else if(iid == IID_IDirectSound3DBuffer || iid == IID_IDirectSound3DBuffer8)
+    {
+      *ptr = new MyDirectSound3DBuffer8;
       return S_OK;
     }
     else
@@ -836,7 +989,7 @@ public:
     }
 
     hdr->lpNext = 0;
-    hdr->dwFlags |= WHDR_INQUEUE;
+    hdr->dwFlags = (hdr->dwFlags | WHDR_INQUEUE) & ~WHDR_DONE;
 
     if(Tail)
     {

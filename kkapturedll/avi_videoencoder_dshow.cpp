@@ -1,8 +1,27 @@
-// kkapture: intrusive demo video capturing.
-// by fabian "ryg/farbrausch" giesen 2005.
+/* kkapture: intrusive demo video capturing.
+ * Copyright (c) 2005-2006 Fabian "ryg/farbrausch" Giesen.
+ *
+ * This program is free software; you can redistribute and/or modify it under
+ * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
+ * any later version; all distributions of this program should contain this
+ * license in a file named "LICENSE.txt".
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT UNLESS REQUIRED BY
+ * LAW OR AGREED TO IN WRITING WILL ANY COPYRIGHT HOLDER OR CONTRIBUTOR
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+ * OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 #include "stdafx.h"
-#include "avi_videoencoder.h"
+#include "avi_videoencoder_dshow.h"
 #include "video.h"
 #include "audio_resample.h"
 #include "videocapturetimer.h"
@@ -580,7 +599,7 @@ static IBaseFilter *FilterFromFourCC(DWORD codec)
 }
 
 // internal data
-struct AVIVideoEncoder::Internal
+struct AVIVideoEncoderDShow::Internal
 {
   bool formatSet;
   DWORD codec;
@@ -592,6 +611,8 @@ struct AVIVideoEncoder::Internal
   AudioSourceFilter *audio;
   IMediaControl *control;
   
+  WAVEFORMATEX wfx;
+
   bool audioOk;
   AudioResampler resampler;
   int resampleSize;
@@ -617,8 +638,10 @@ struct AVIVideoEncoder::Internal
 
     if(build)
     {
+      HRESULT hr;
+
       // rendering section first
-      build->SetOutputFileName(&MEDIASUBTYPE_Avi,wideName,&mux,0);
+      hr = build->SetOutputFileName(&MEDIASUBTYPE_Avi,wideName,&mux,0);
 
       // setup full interleaving on mux
       if(mux)
@@ -635,17 +658,17 @@ struct AVIVideoEncoder::Internal
         printLog("avi_dshow: setup interleave\n");
       }
       else
-        printLog("avi_dshow: no mux!\n");
+        printLog("avi_dshow: no mux! <fn %ws>\n",wideName);
 
       // we'll need a general graph builder for the rest
-      HRESULT hr = build->GetFiltergraph(&graph);
+      hr = build->GetFiltergraph(&graph);
       if(FAILED(hr))
         printLog("avi_dshow: getfiltergraph failed\n");
     }
   }
 };
 
-void AVIVideoEncoder::Cleanup()
+void AVIVideoEncoderDShow::Cleanup()
 {
   printLog("avi_dshow: cleanup\n");
 
@@ -671,7 +694,7 @@ void AVIVideoEncoder::Cleanup()
   delete[] d->resampleBuf;
 }
 
-void AVIVideoEncoder::StartEncode()
+void AVIVideoEncoderDShow::StartEncode()
 {
   d->NeedBuild();
 
@@ -744,7 +767,7 @@ void AVIVideoEncoder::StartEncode()
   }
 }
 
-void AVIVideoEncoder::StartAudioEncode(const tWAVEFORMATEX *fmt)
+void AVIVideoEncoderDShow::StartAudioEncode(const tWAVEFORMATEX *fmt)
 {
   WAVEFORMATEX out;
 
@@ -764,7 +787,7 @@ void AVIVideoEncoder::StartAudioEncode(const tWAVEFORMATEX *fmt)
     d->audio->FeedZeroFrames(frame,fps);
 }
 
-AVIVideoEncoder::AVIVideoEncoder(const char *name,float _fps,unsigned long codec,unsigned quality)
+AVIVideoEncoderDShow::AVIVideoEncoderDShow(const char *name,float _fps,unsigned long codec,unsigned quality)
 {
   xRes = yRes = 0;
   frame = 0;
@@ -781,6 +804,7 @@ AVIVideoEncoder::AVIVideoEncoder(const char *name,float _fps,unsigned long codec
   d->audio = 0;
   d->vid_compress = 0;
   d->control = 0;
+  ZeroMemory(&d->wfx,sizeof(d->wfx));
 
   d->audioOk = false;
   d->resampleBuf = 0;
@@ -789,19 +813,19 @@ AVIVideoEncoder::AVIVideoEncoder(const char *name,float _fps,unsigned long codec
   d->SetName(name);
 }
 
-AVIVideoEncoder::~AVIVideoEncoder()
+AVIVideoEncoderDShow::~AVIVideoEncoderDShow()
 {
   Cleanup();
   delete d;
 }
 
-void AVIVideoEncoder::SetSize(int _xRes,int _yRes)
+void AVIVideoEncoderDShow::SetSize(int _xRes,int _yRes)
 {
   xRes = _xRes;
   yRes = _yRes;
 }
 
-void AVIVideoEncoder::WriteFrame(const unsigned char *buffer)
+void AVIVideoEncoderDShow::WriteFrame(const unsigned char *buffer)
 {
   // encode the frame
   if(!frame && !d->formatSet && xRes && yRes && params.CaptureVideo)
@@ -814,18 +838,24 @@ void AVIVideoEncoder::WriteFrame(const unsigned char *buffer)
   }
 }
 
-void AVIVideoEncoder::SetAudioFormat(const tWAVEFORMATEX *fmt)
+void AVIVideoEncoderDShow::SetAudioFormat(const tWAVEFORMATEX *fmt)
 {
   if(params.CaptureAudio)
   {
     printLog("avi_dshow: audio format %d Hz, %d bits/sample, %d channels\n",
       fmt->nSamplesPerSec,fmt->wBitsPerSample,fmt->nChannels);
 
-    StartAudioEncode(fmt);
+    d->wfx = *fmt;
+    StartAudioEncode(&d->wfx);
   }
 }
 
-void AVIVideoEncoder::WriteAudioFrame(const void *buffer,int samples)
+void AVIVideoEncoderDShow::GetAudioFormat(tWAVEFORMATEX *fmt)
+{
+  *fmt = d->wfx;
+}
+
+void AVIVideoEncoderDShow::WriteAudioFrame(const void *buffer,int samples)
 {
   if(d->audio && d->audioOk)
   {

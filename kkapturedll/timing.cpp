@@ -1,5 +1,24 @@
-// kkapture: intrusive demo video capturing.
-// by fabian "ryg/farbrausch" giesen 2005.
+/* kkapture: intrusive demo video capturing.
+ * Copyright (c) 2005-2006 Fabian "ryg/farbrausch" Giesen.
+ *
+ * This program is free software; you can redistribute and/or modify it under
+ * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
+ * any later version; all distributions of this program should contain this
+ * license in a file named "LICENSE.txt".
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT UNLESS REQUIRED BY
+ * LAW OR AGREED TO IN WRITING WILL ANY COPYRIGHT HOLDER OR CONTRIBUTOR
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+ * OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 #include "stdafx.h"
 #include "videocapturetimer.h"
@@ -24,9 +43,12 @@ DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_timeGetSystemTime(MMTIME *pmmt,UINT cb
 DETOUR_TRAMPOLINE(VOID __stdcall Real_Sleep(DWORD dwMilliseconds), Sleep);
 DETOUR_TRAMPOLINE(DWORD __stdcall Real_WaitForSingleObject(HANDLE hHandle,DWORD dwMilliseconds), WaitForSingleObject);
 DETOUR_TRAMPOLINE(DWORD __stdcall Real_WaitForMultipleObjects(DWORD nCount,CONST HANDLE *lpHandles,BOOL bWaitAll,DWORD dwMilliseconds), WaitForMultipleObjects);
+DETOUR_TRAMPOLINE(DWORD __stdcall Real_MsgWaitForMultipleObjects(DWORD nCount,CONST HANDLE *lpHandles,BOOL bWaitAll,DWORD dwMilliseconds,DWORD dwWakeMask), MsgWaitForMultipleObjects);
 DETOUR_TRAMPOLINE(void __stdcall Real_GetSystemTimeAsFileTime(FILETIME *time), GetSystemTimeAsFileTime);
+DETOUR_TRAMPOLINE(void __stdcall Real_GetSystemTime(SYSTEMTIME *time), GetSystemTime);
 DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_timeSetEvent(UINT uDelay,UINT uResolution,LPTIMECALLBACK fptc,DWORD_PTR dwUser,UINT fuEvent), timeSetEvent);
 DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_timeKillEvent(UINT uTimerID), timeKillEvent);
+DETOUR_TRAMPOLINE(UINT_PTR __stdcall Real_SetTimer(HWND hWnd,UINT_PTR uIDEvent,UINT uElapse,TIMERPROC lpTimerFunc), SetTimer);
 
 BOOL __stdcall Mine_QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency)
 {
@@ -57,7 +79,8 @@ DWORD __stdcall Mine_GetTickCount()
   static int firstTime = 0;
 
   if(!frame)
-    firstTime = Real_GetTickCount();
+    firstTime = Real_timeGetTime();
+    //firstTime = Real_GetTickCount();
 
   return firstTime + UMulDiv(frame,1000*100,frameRateScaled);
 }
@@ -75,7 +98,6 @@ DWORD __stdcall Mine_timeGetTime()
 
 MMRESULT __stdcall Mine_timeGetSystemTime(MMTIME *pmmt,UINT cbmmt)
 {
-  printLog("timing: timeGetSystemTime\n");
   return Real_timeGetSystemTime(pmmt,cbmmt);
 }
 
@@ -92,6 +114,14 @@ void __stdcall Mine_GetSystemTimeAsFileTime(FILETIME *time)
   LONGLONG finalTime = baseTime + elapsedSince;
 
   *((LONGLONG *) time) = finalTime;
+}
+
+void __stdcall Mine_GetSystemTime(SYSTEMTIME *time)
+{
+  FILETIME filetime;
+
+  Mine_GetSystemTimeAsFileTime(&filetime);
+  FileTimeToSystemTime(&filetime,time);
 }
 
 // --- event timers
@@ -120,7 +150,8 @@ static MMRESULT __stdcall Mine_timeSetEvent(UINT uDelay,UINT uResolution,LPTIMEC
   EnterCriticalSection(&TimerAllocLock);
 
   // try to find a free slot
-  for(int i=0;i<MaxEventTimers;i++)
+  int i;
+  for(i=0;i<MaxEventTimers;i++)
     if(!EventTimer[i].Used)
       break;
 
@@ -169,7 +200,7 @@ static void FireTimer(UINT index)
     timer->Callback(index+1,0,timer->User,0,0);
 }
 
-static void ProcessTimers(int TimeElapsed)
+static void ProcessEventTimers(int TimeElapsed)
 {
   EnterCriticalSection(&TimerAllocLock);
 
@@ -196,6 +227,15 @@ static void ProcessTimers(int TimeElapsed)
 
   LeaveCriticalSection(&TimerAllocLock);
 }
+
+// --- user32 timers
+
+static UINT_PTR __stdcall Mine_SetTimer(HWND hWnd,UINT_PTR nIDEvent,UINT uElapse,TIMERPROC lpTimerFunc)
+{
+  return Real_SetTimer(hWnd,nIDEvent,1,lpTimerFunc);
+}
+
+// --- wait scheduling
 
 static void IncrementWaiting()
 {
@@ -281,7 +321,40 @@ DWORD __stdcall Mine_WaitForMultipleObjects(DWORD nCount,CONST HANDLE *lpHandles
   }
 }
 
+DWORD __stdcall Mine_MsgWaitForMultipleObjects(DWORD nCount,CONST HANDLE *lpHandles,BOOL bWaitAll,DWORD dwMilliseconds,DWORD dwWakeMask)
+{
+  // infinite waits are always passed through
+  if(dwMilliseconds == INFINITE)
+    return Real_MsgWaitForMultipleObjects(nCount,lpHandles,bWaitAll,dwMilliseconds,dwWakeMask);
+  else
+  {
+    // waitalls are harder to fake, so we just clamp them to timeout 0.
+    if(bWaitAll)
+      return Real_MsgWaitForMultipleObjects(nCount,lpHandles,TRUE,0,dwWakeMask);
+    else
+    {
+      // we can't use new/delete, this might be called from a context
+      // where they don't work (such as after clib deinit)
+      HANDLE *handles = (HANDLE *) _alloca((nCount + 1) * sizeof(HANDLE));
+      memcpy(handles,lpHandles,nCount*sizeof(HANDLE));
+      handles[nCount] = nextFrameEvent;
+
+      Real_WaitForSingleObject(resyncEvent,INFINITE);
+      IncrementWaiting();
+  
+      DWORD result = Real_MsgWaitForMultipleObjects(nCount+1,handles,FALSE,dwMilliseconds,dwWakeMask);
+      if(result == WAIT_OBJECT_0+nCount)
+        result = WAIT_TIMEOUT;
+
+      DecrementWaiting();
+  
+      return result;
+    }
+  }
+}
+
 static int currentFrame = 0;
+static int realStartTime = 0;
 
 void initTiming()
 {
@@ -305,13 +378,32 @@ void initTiming()
   DetourFunctionWithTrampoline((PBYTE) Real_Sleep, (PBYTE) Mine_Sleep);
   DetourFunctionWithTrampoline((PBYTE) Real_WaitForSingleObject, (PBYTE) Mine_WaitForSingleObject);
   DetourFunctionWithTrampoline((PBYTE) Real_WaitForMultipleObjects, (PBYTE) Mine_WaitForMultipleObjects);
+  DetourFunctionWithTrampoline((PBYTE) Real_MsgWaitForMultipleObjects, (PBYTE) Mine_MsgWaitForMultipleObjects);
   DetourFunctionWithTrampoline((PBYTE) Real_GetSystemTimeAsFileTime, (PBYTE) Mine_GetSystemTimeAsFileTime);
+  DetourFunctionWithTrampoline((PBYTE) Real_GetSystemTime, (PBYTE) Mine_GetSystemTime);
   DetourFunctionWithTrampoline((PBYTE) Real_timeSetEvent, (PBYTE) Mine_timeSetEvent);
   DetourFunctionWithTrampoline((PBYTE) Real_timeKillEvent, (PBYTE) Mine_timeKillEvent);
+  DetourFunctionWithTrampoline((PBYTE) Real_SetTimer, (PBYTE) Mine_SetTimer);
 }
 
 void doneTiming()
 {
+  // make sure all currently active waits are finished
+  ResetEvent(resyncEvent);
+  SetEvent(nextFrameEvent);
+  if(waitCounter)
+    ResetEvent(noOneWaiting);
+  else
+    SetEvent(noOneWaiting);
+
+  while(Real_WaitForSingleObject(noOneWaiting,5) == WAIT_TIMEOUT)
+    if(!waitCounter)
+      break;
+
+  // these functions depend on critical sections that we're about to delete.
+  DetourRemove((PBYTE) Real_timeSetEvent, (PBYTE) Mine_timeSetEvent);
+  DetourRemove((PBYTE) Real_timeKillEvent, (PBYTE) Mine_timeKillEvent);
+  DetourRemove((PBYTE) Real_SetTimer, (PBYTE) Mine_SetTimer);
   DeleteCriticalSection(&TimerAllocLock);
 
   // we have to remove those, because code we call on deinitilization (especially directshow related)
@@ -324,7 +416,14 @@ void doneTiming()
   CloseHandle(resyncEvent);
   CloseHandle(noOneWaiting);
 
+  int runTime = Real_timeGetTime() - realStartTime;
   timeEndPeriod(1);
+
+  if(runTime)
+  {
+    int rate = MulDiv(currentFrame,100*1000,runTime);
+    printLog("timing: %d.%02d frames per second on average\n",rate/100,rate%100);
+  }
 }
 
 void resetTiming()
@@ -355,7 +454,10 @@ void nextFrameTiming()
 
   DWORD oldFrameTime = UMulDiv(currentFrame,1000*100,frameRateScaled);
   DWORD newFrameTime = UMulDiv(currentFrame+1,1000*100,frameRateScaled);
-  ProcessTimers(newFrameTime - oldFrameTime);
+  ProcessEventTimers(newFrameTime - oldFrameTime);
+
+  if(!currentFrame)
+    realStartTime = Real_timeGetTime();
 
   currentFrame++;
 }

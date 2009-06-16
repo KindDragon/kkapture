@@ -2,8 +2,11 @@ checked with new timing (alphabetical order):
 - a deepness in the sky/mfx (synchronization slightly off)
 - assembly 04 invitation/moppi productions
 - bleam/lionhead
+- che guevara/fairlight
 - coma (on the dancefloor)/cocoon
 - contour/tbl (sounds sucks)
+- don't stop/portal process
+- final audition/plastic
 - fr-08: the product/farbrausch (use "skip silence at start")
 - fr-025: the popular demo/farbrausch
 - fr-038: theta/farbrausch
@@ -11,7 +14,9 @@ checked with new timing (alphabetical order):
 - insert coins/traction
 - metamorf/satori
 - ninja in a box/tpolm
+- blockbuster/outracks
 - panjabmoore meets 007 again/calodox
+- perfect love/lkcc+bauknecht
 - planet risk/asd
 - protozoa/kewlers
 - resonance/portal process
@@ -19,7 +24,9 @@ checked with new timing (alphabetical order):
 - structure 2: sequence/ümlaüt design
 - sts-03: aeon flux/synesthetics
 - trocken/bauknecht
+- variform/kewlers
 - wonder/sunflower
+- xmix 2004/mfx+kewlers
 - zilog/sunflower (win32 version)
 - zyprexa/bauknecht
 
@@ -35,10 +42,8 @@ not yet checked with new timing code, working with older timing (alphabetical or
 - aether/mfx
 - antimoney/3state
 - arise/stravaganza
-- che guevara/fairlight
 - death and taxes/fairlight
 - defrost/unik
-- don't stop/portal process
 - fr-019: poem to a horse/farbrausch
 - fresnel 2/kolor
 - please the cookie thing/aardbei

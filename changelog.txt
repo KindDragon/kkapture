@@ -1,9 +1,24 @@
+version 0.04:
+* switched to visual c++ 2005 express edition
+* "new startup interception" that works on 64bit host machines (always on on 64bit, default off on 32bit)
+* kkapturing on 64bit host machines works now
+* kkapture is now under the artistic license v2.0beta5
+* small waveout code fix by manx included (thanks)
+* automatic segmenting code for avi-vfw encoder by bartman included (thanks to you too :)
+* automatically disables VSync during recording for most supported APIs (improves capturing speed somewhat)
+* basic SetTimer support (i'm not particularly happy with it)
+* improved resolution determination for opengl demos
+* magic exit key: press ctrl+break to safely abort a capture.
+* writes (approximate) capturing frame rate on exit
+* small fix in doneTiming() to make sure no waits are currently active when timing is deinitialized
+* improvements in d3d8/9 reference handling code
+* support for demos that initialize/deinitialize the graphics API several times
+
 version 0.04alpha:
 * some performance improvements for directdraw capturing
 * several bugfixes
 * new directshow-based avi writer, currently the only one available (0.04 final will have both the old and new avi writer)
 * automatic audio resampling (required for dshow, currently converts everything to 16bit 44.1kHz stereo)
-* new timing code (not particularly well tested yet!)
 
 version 0.03:
 * waveout capturing finally works (now that was one stupid bug)

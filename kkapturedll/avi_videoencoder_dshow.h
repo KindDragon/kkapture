@@ -22,7 +22,39 @@
 
 #pragma once
 
-#include <windows.h>
-#include <vfw.h>
-#define DETOURS_INTERNAL
-#include "detours.h"
+#ifndef __AVI_VIDEOENCODER_DSHOW_H__
+#define __AVI_VIDEOENCODER_DSHOW_H__
+
+#include "videoencoder.h"
+
+#if USE_DSHOW_AVI_WRITER
+
+class AVIVideoEncoderDShow : public VideoEncoder
+{
+  struct Internal;
+  
+  int xRes,yRes;
+  int frame;
+  int audioSample,audioBytesSample;
+  float fps;
+  Internal *d;
+
+  void Cleanup();
+  void StartEncode();
+  void StartAudioEncode(const tWAVEFORMATEX *fmt);
+
+public:
+  AVIVideoEncoderDShow(const char *name,float _fps,unsigned long codec,unsigned quality);
+  virtual ~AVIVideoEncoderDShow();
+
+  virtual void SetSize(int xRes,int yRes);
+  virtual void WriteFrame(const unsigned char *buffer);
+
+  virtual void SetAudioFormat(const tWAVEFORMATEX *fmt);
+  virtual void GetAudioFormat(tWAVEFORMATEX *fmt);
+  virtual void WriteAudioFrame(const void *buffer,int samples);
+};
+
+#endif
+
+#endif

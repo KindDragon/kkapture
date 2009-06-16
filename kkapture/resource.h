@@ -9,15 +9,14 @@
 #define IDC_TARGET                      1004
 #define IDC_BTARGET                     1005
 #define IDC_FRAMERATE                   1008
-#define IDC_ENCODER1                    1010
-#define IDC_ENCODER2                    1011
+#define IDC_ENCODER                     1010
 #define IDC_VIDEOCODEC                  1014
 #define IDC_VCPICK                      1015
 #define IDC_VCAPTURE                    1016
 #define IDC_ACAPTURE                    1017
 #define IDC_SKIPSILENCE                 1018
 #define IDC_SLEEPLAST                   1019
-#define IDC_AUDIOCODEC                  1020
+#define IDC_NEWINTERCEPT                1020
 
 // Next default values for new objects
 // 
