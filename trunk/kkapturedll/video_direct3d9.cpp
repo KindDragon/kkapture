@@ -69,9 +69,6 @@ static void fixPresentParameters(D3DPRESENT_PARAMETERS *pp)
 		pp->BackBufferFormat = D3DFMT_X8R8G8B8;
 
   pp->PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
-  
-  pp->Windowed = TRUE;
-  pp->FullScreen_RefreshRateInHz = 0;
 }
 
 static void freeCaptureSurfaces()

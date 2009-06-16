@@ -1,3 +1,7 @@
+version 0.05b:
+* IDirectSoundBuffer::SetFrequency handling fixed (affects onwards, 2^5 by traction)
+* debug force-windowed code for d3d9 removed :)
+
 version 0.05:
 * small bugfix in dshow video encoder (thanks malc)
 * "new startup instrumentation" button now actually does something :)
