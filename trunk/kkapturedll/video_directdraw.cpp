@@ -66,10 +66,64 @@ static PQueryInterface Real_DDrawSurface7_QueryInterface = 0;
 static PDDrawSurface_Blt Real_DDrawSurface7_Blt = 0;
 static PDDrawSurface_Flip Real_DDrawSurface7_Flip = 0;
 
+static IUnknown *PrimaryDDraw = 0;
 static IUnknown *PrimarySurface = 0;
 static int PrimarySurfaceVersion = 0;
 
-static IDirectDrawSurface *BlitSurface = 0;
+static ULONG DDrawRefCount = 0;
+
+// ---- blit surface handling
+
+static IDirectDrawSurface* GetBlitSurface()
+{
+  IDirectDrawSurface* blitSurface;
+
+  if(PrimarySurfaceVersion < 4)
+  {
+    IDirectDrawSurface *surf = (IDirectDrawSurface *) PrimarySurface;
+
+    DDSURFACEDESC ddsd;
+    ZeroMemory(&ddsd,sizeof(ddsd));
+    ddsd.dwSize = sizeof(ddsd);
+    if(FAILED(surf->GetSurfaceDesc(&ddsd)))
+      printLog("video: can't get surface desc\n");
+    else
+    {
+      ddsd.dwWidth = captureWidth;
+      ddsd.dwHeight = captureHeight;
+
+      ddsd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
+      ddsd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
+      IDirectDraw *dd = (IDirectDraw *) PrimaryDDraw;
+      if(FAILED(dd->CreateSurface(&ddsd,&blitSurface,0)))
+        printLog("video: could not create blit target\n");
+    }
+  }
+  else
+  {
+    IDirectDrawSurface4 *srf4 = (IDirectDrawSurface4 *) PrimarySurface;
+
+    DDSURFACEDESC2 ddsd;
+    ZeroMemory(&ddsd,sizeof(ddsd));
+    ddsd.dwSize = sizeof(ddsd);
+    if(FAILED(srf4->GetSurfaceDesc(&ddsd)))
+      printLog("video: can't get surface desc\n");
+    else
+    {
+      ddsd.dwWidth = captureWidth;
+      ddsd.dwHeight = captureHeight;
+
+      ddsd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
+      ddsd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
+      ddsd.ddsCaps.dwCaps2 = 0;
+      IDirectDraw4 *dd = (IDirectDraw4 *) PrimaryDDraw;
+      if(FAILED(dd->CreateSurface(&ddsd,(IDirectDrawSurface4 **) &blitSurface,0)))
+        printLog("video: could not create blit target\n");
+    }
+  }
+
+  return blitSurface;
+}
 
 // ---- blitter
 
@@ -259,6 +313,10 @@ public:
     ZeroMemory(&fmt,sizeof(fmt));
     fmt.dwSize = sizeof(fmt);
 
+    IDirectDrawSurface* blitSurface = GetBlitSurface();
+    if(!blitSurface)
+      return false;
+
     if(FAILED(surf->GetPixelFormat(&fmt)))
     {
       printLog("video: can't get pixel format\n");
@@ -278,7 +336,7 @@ public:
     rc.right = captureWidth;
     rc.bottom = captureHeight;
 
-    if(FAILED(BlitSurface->Blt(&rc,surf,&rc,DDBLT_WAIT,0)))
+    if(FAILED(blitSurface->Blt(&rc,surf,&rc,DDBLT_WAIT,0)))
     {
       printLog("video: blit failed\n");
       return false;
@@ -293,7 +351,7 @@ public:
       ZeroMemory(&ddsd,sizeof(ddsd));
       ddsd.dwSize = sizeof(ddsd);
 
-      if(FAILED(BlitSurface->Lock(0,&ddsd,DDLOCK_WAIT,0)))
+      if(FAILED(blitSurface->Lock(0,&ddsd,DDLOCK_WAIT,0)))
       {
         printLog("video: can't lock surface\n");
         return false;
@@ -304,7 +362,7 @@ public:
     }
     else
     {
-      IDirectDrawSurface4 *srf4 = (IDirectDrawSurface4 *) BlitSurface;
+      IDirectDrawSurface4 *srf4 = (IDirectDrawSurface4 *) blitSurface;
 
       DDSURFACEDESC2 ddsd;
       ZeroMemory(&ddsd,sizeof(ddsd));
@@ -329,7 +387,8 @@ public:
       BlitOneLine(src,dst,captureWidth);
     }
 
-    BlitSurface->Unlock(surface);
+    blitSurface->Unlock(surface);
+    blitSurface->Release();
 
     return true;
   }
@@ -382,12 +441,13 @@ static HRESULT DDrawSurfQueryInterface(HRESULT hr,REFIID iid,LPVOID *ppObject)
 
 static void PrimarySurfaceCreated(IUnknown *ddraw,IUnknown *srfp,int ver)
 {
+  PrimaryDDraw = ddraw;
   PrimarySurface = srfp;
   PrimarySurfaceVersion = ver;
 
-  if(ver < 4)
+  if(PrimarySurfaceVersion < 4)
   {
-    IDirectDrawSurface *surf = (IDirectDrawSurface *) srfp;
+    IDirectDrawSurface *surf = (IDirectDrawSurface *) PrimarySurface;
 
     DDSURFACEDESC ddsd;
     ZeroMemory(&ddsd,sizeof(ddsd));
@@ -398,17 +458,11 @@ static void PrimarySurfaceCreated(IUnknown *ddraw,IUnknown *srfp,int ver)
     {
       if(captureWidth != ddsd.dwWidth || captureHeight != ddsd.dwHeight)
         setCaptureResolution(ddsd.dwWidth,ddsd.dwHeight);
-
-      ddsd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
-      ddsd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
-      IDirectDraw *dd = (IDirectDraw *) ddraw;
-      if(FAILED(dd->CreateSurface(&ddsd,&BlitSurface,0)))
-        printLog("video: could not create blit target\n");
     }
   }
   else
   {
-    IDirectDrawSurface4 *srf4 = (IDirectDrawSurface4 *) srfp;
+    IDirectDrawSurface4 *srf4 = (IDirectDrawSurface4 *) PrimarySurface;
 
     DDSURFACEDESC2 ddsd;
     ZeroMemory(&ddsd,sizeof(ddsd));
@@ -419,13 +473,6 @@ static void PrimarySurfaceCreated(IUnknown *ddraw,IUnknown *srfp,int ver)
     {
       if(captureWidth != ddsd.dwWidth || captureHeight != ddsd.dwHeight)
         setCaptureResolution(ddsd.dwWidth,ddsd.dwHeight);
-
-      ddsd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
-      ddsd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
-      ddsd.ddsCaps.dwCaps2 = 0;
-      IDirectDraw4 *dd = (IDirectDraw4 *) ddraw;
-      if(FAILED(dd->CreateSurface(&ddsd,(IDirectDrawSurface4 **) &BlitSurface,0)))
-        printLog("video: could not create blit target\n");
     }
   }
 
@@ -473,8 +520,6 @@ static void ImplementBltToPrimary(IUnknown *surf,int version)
 {
   if(!surf)
     return;
-
-  printLog("ImplementBltToPrimary %d\n",version);
 
   if(params.CaptureVideo)
   {

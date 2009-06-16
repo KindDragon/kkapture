@@ -88,14 +88,14 @@ LANGUAGE LANG_NEUTRAL, SUBLANG_SYS_DEFAULT
 // Dialog
 //
 
-IDD_MAINWIN DIALOGEX 0, 0, 258, 239
+IDD_MAINWIN DIALOGEX 0, 0, 258, 251
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | 
     WS_SYSMENU
-CAPTION ".kkapture 0.06b"
+CAPTION ".kkapture 0.07"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
-    DEFPUSHBUTTON   "kkapture!",IDOK,149,218,50,14
-    PUSHBUTTON      "Exit",IDCANCEL,201,218,50,14
+    DEFPUSHBUTTON   "kkapture!",IDOK,149,230,50,14
+    PUSHBUTTON      "Exit",IDCANCEL,201,230,50,14
     EDITTEXT        IDC_DEMO,51,7,146,13,ES_AUTOHSCROLL
     LTEXT           "Demo:",IDC_STATIC,9,9,22,8
     PUSHBUTTON      "Browse...",IDC_BDEMO,201,7,50,13
@@ -111,7 +111,7 @@ BEGIN
     GROUPBOX        "AVI Encoding Options",IDC_STATIC,7,73,244,26
     LTEXT           "Video Codec:",IDC_VIDEOCODEC,14,84,176,8
     PUSHBUTTON      "Pick...",IDC_VCPICK,214,82,30,12
-    GROUPBOX        "Tweaking",IDC_STATIC,7,103,244,49
+    GROUPBOX        "Tweaking",IDC_STATIC,7,103,244,61
     CONTROL         "Capture Video",IDC_VCAPTURE,"Button",BS_AUTOCHECKBOX | 
                     WS_TABSTOP,14,114,61,10
     CONTROL         "Capture Audio",IDC_ACAPTURE,"Button",BS_AUTOCHECKBOX | 
@@ -124,15 +124,17 @@ BEGIN
                     BS_AUTOCHECKBOX | WS_TABSTOP,14,138,95,10
     CONTROL         "Fairlight hack",IDC_FAIRLIGHTHACK,"Button",
                     BS_AUTOCHECKBOX | WS_TABSTOP,121,138,70,10
-    GROUPBOX        "Auto-skip",IDC_STATIC,7,155,244,57
+    CONTROL         "Power down after completion",IDC_POWERDOWN,"Button",BS_AUTOCHECKBOX |
+                    WS_TABSTOP,14,150,120,10
+    GROUPBOX        "Auto-skip",IDC_STATIC,7,167,244,57
     CONTROL         "Enable automatic frameskip on timeout",IDC_AUTOSKIP,
-                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,166,150,10
+                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,178,150,10
     LTEXT           "Initial frame timeout (seconds):",IDC_STATIC,
-                    14,180,140,8
-    EDITTEXT        IDC_FIRSTFRAMETIMEOUT,130,178,31,13,ES_AUTOHSCROLL
+                    14,192,140,8
+    EDITTEXT        IDC_FIRSTFRAMETIMEOUT,130,190,31,13,ES_AUTOHSCROLL
     LTEXT           "Other frames timeout (seconds):",IDC_STATIC,
-                    14,196,140,8
-    EDITTEXT        IDC_OTHERFRAMETIMEOUT,130,194,31,13,ES_AUTOHSCROLL
+                    14,208,140,8
+    EDITTEXT        IDC_OTHERFRAMETIMEOUT,130,206,31,13,ES_AUTOHSCROLL
 END
 
 

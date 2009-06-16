@@ -150,6 +150,8 @@ void AVIVideoEncoderVFW::Cleanup()
     }
 
     delete[] d->resampleBuf;
+    d->resampleBuf = 0;
+    d->resampleSize = 0;
 
     AVIFileExit();
     printLog("avi_vfw: avifile shutdown complete\n");

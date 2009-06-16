@@ -28,6 +28,10 @@ void initLog();
 void closeLog();
 void printLog(const char *format,...);
 
+// ---- logging used for debugging kkapture
+//#define TRACE(x) printLog x
+#define TRACE(x)
+
 // ---- vtable patching
 PBYTE DetourCOM(IUnknown *obj,int vtableOffs,PBYTE newFunction);
 
