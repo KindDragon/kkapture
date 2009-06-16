@@ -12,6 +12,8 @@
 VideoEncoder *encoder = 0;
 float frameRate = 10;
 int frameRateScaled = 1000;
+ParameterBlock params;
+
 bool initialized = false;
 
 void done()
@@ -46,9 +48,12 @@ void init()
 
   initLog();
   printLog("main: initializing...\n");
+  initTiming();
   initVideo();
   initSound();
-  initTiming();
+
+  // initialize params with all zero (ahem)
+  memset(&params,0,sizeof(params));
 
   // get file mapping containing capturing info
   HANDLE hMapping = OpenFileMapping(FILE_MAP_READ,FALSE,_T("__kkapture_parameter_block"));
@@ -60,6 +65,8 @@ void init()
       // correct version
       if(block->VersionTag == PARAMVERSION)
       {
+        memcpy(&params,block,sizeof(params));
+
         frameRateScaled = block->FrameRate;
         if(block->Encoder == AVIEncoder)
           encoder = new AVIVideoEncoder(block->FileName,frameRateScaled/100.0f,block->VideoCodec,block->VideoQuality);
@@ -88,7 +95,7 @@ void init()
   // install our hook so we get notified of process exit (hopefully)
   DetourFunctionWithTrampoline((PBYTE) Real_ExitProcess, (PBYTE) Mine_ExitProcess);
 
-  frameRate = frameRateScaled / 100.0;
+  frameRate = frameRateScaled / 100.0f;
   initialized = true;
 }
 
@@ -96,15 +103,6 @@ BOOL APIENTRY DllMain(HINSTANCE hModule, DWORD dwReason, PVOID lpReserved)
 {
   if(dwReason == DLL_PROCESS_ATTACH)
     init();
-	/*switch (dwReason)
-  {
-  case DLL_PROCESS_ATTACH:
-    init();
-    return TRUE;
 
-  case DLL_PROCESS_DETACH:
-    done();
-    return TRUE;
-	}*/
-	return TRUE;
+  return TRUE;
 }

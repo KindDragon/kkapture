@@ -127,6 +127,11 @@ INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPARAM lPar
       HIC codec = ICOpen(ICTYPE_VIDEO,Params.VideoCodec,ICMODE_QUERY);
       SetVideoCodecInfo(hWndDlg,codec);
       ICClose(codec);
+
+      // gui stuff not read from registry
+      CheckDlgButton(hWndDlg,IDC_VCAPTURE,BST_CHECKED);
+      CheckDlgButton(hWndDlg,IDC_ACAPTURE,BST_CHECKED);
+      CheckDlgButton(hWndDlg,IDC_SLEEPLAST,BST_CHECKED);
     }
     return TRUE;
 
@@ -170,6 +175,12 @@ INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPARAM lPar
 
         Params.FrameRate = frameRate * 100;
         Params.Encoder = (EncoderType) (BMPEncoder + GetCheckedRadioButton(hWndDlg,IDC_ENCODER1,IDC_ENCODER2));
+
+        Params.CaptureVideo = IsDlgButtonChecked(hWndDlg,IDC_VCAPTURE) == BST_CHECKED;
+        Params.CaptureAudio = IsDlgButtonChecked(hWndDlg,IDC_ACAPTURE) == BST_CHECKED;
+        Params.SoundMaxSkip = IsDlgButtonChecked(hWndDlg,IDC_SKIPSILENCE) == BST_CHECKED ? 10 : 0;
+        Params.MakeSleepsLastOneFrame = IsDlgButtonChecked(hWndDlg,IDC_SLEEPLAST) == BST_CHECKED;
+        Params.SleepTimeout = 2500; // yeah, this should be configurable
 
         // save settings for next time
         SaveSettingsToRegistry();
@@ -293,8 +304,8 @@ int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,i
     _tcscat(commandLine,Arguments);
 
     // determine kkapture dll path
-    TCHAR mypath[_MAX_PATH],dllpath[_MAX_PATH],drive[_MAX_DRIVE],dir[_MAX_DIR];
-    TCHAR fname[_MAX_FNAME],ext[_MAX_EXT];
+    TCHAR mypath[_MAX_PATH],dllpath[_MAX_PATH],exepath[_MAX_PATH];
+    TCHAR drive[_MAX_DRIVE],dir[_MAX_DIR],fname[_MAX_FNAME],ext[_MAX_EXT];
     GetModuleFileName(0,mypath,_MAX_PATH);
     _tsplitpath(mypath,drive,dir,fname,ext);
     _tmakepath(dllpath,drive,dir,"kkapturedll","dll");
@@ -306,6 +317,10 @@ int WINAPI WinMain(HINSTANCE hInstance,HINSTANCE hPrevInstance,LPSTR lpCmdLine,i
     ZeroMemory(&si,sizeof(si));
     ZeroMemory(&pi,sizeof(pi));
     si.cb = sizeof(si);
+
+    _tsplitpath(ExeName,drive,dir,fname,ext);
+    _tmakepath(exepath,drive,dir,_T(""),_T(""));
+    SetCurrentDirectory(exepath);
 
     if(DetourCreateProcessWithDll(ExeName,commandLine,0,0,TRUE,
       CREATE_DEFAULT_ERROR_MODE,0,0,&si,&pi,dllpath,0))

@@ -1,14 +1,35 @@
 checked and working demos (alphabetical order):
-
+- 00101010/FAN
+- 155/95/plastic
 - a deepness in the sky/mfx
 - aether/mfx
+- antimoney/3state
 - arise/stravaganza
+- assembly 04 invitation/moppi productions
 - coma (on the dancefloor)/cocoon
+- contour/tbl
+- dead cells/haujobb (disable "force sleeps to take one frame", use "skip silence at start")
+- dead flowers/haujobb (disable "force sleeps to take one frame", use "skip silence at start")
+- defrost/unik
+- fr-08: the product/farbrausch (use "skip silence at start")
+- fr-019: poem to a horse/farbrausch
 - fr-025: the popular demo/farbrausch
+- fr-038: theta/farbrausch
+- fresnel 2/kolor
+- funkkin/haujobb (disable "force sleeps to take one frame", use "skip silence at start")
+- heaven 7/exceed
+- metamorf/satori
+- panjabmoore meets 007 again/calodox
 - planet risk/asd
+- please the cookie thing/aardbei
+- protozoa/kewlers
+- raw confessions/cocoon
 - structure/ümlaüt design
+- square/pulse (win32 version)
+- wonder/sunflower
+- zilog/sunflower (win32 version)
+- zyprexa/bauknecht
 
 checked and working with problems:
-- wonder/sunflower (sometimes skips in sound)
 
 checked and not working:

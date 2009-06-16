@@ -10,7 +10,7 @@
 
 static void captureGLFrame()
 {
-  if(captureData && encoder)
+  if(captureData && encoder && params.CaptureVideo)
   {
     // blit data into capture buffer
     glReadPixels(0,0,captureWidth,captureHeight,GL_BGR_EXT,GL_UNSIGNED_BYTE,captureData);
@@ -48,8 +48,11 @@ static LONG __stdcall Mine_ChangeDisplaySettingsEx(LPCTSTR lpszDeviceName,LPDEVM
 {
   LONG result = Real_ChangeDisplaySettingsEx(lpszDeviceName,lpDevMode,hwnd,dwflags,lParam);
 
-  if(result == DISP_CHANGE_SUCCESSFUL && (lpDevMode->dmFields & (DM_PELSWIDTH | DM_PELSHEIGHT)) == (DM_PELSWIDTH | DM_PELSHEIGHT))
+  if(result == DISP_CHANGE_SUCCESSFUL && lpDevMode &&
+    (lpDevMode->dmFields & (DM_PELSWIDTH | DM_PELSHEIGHT)) == (DM_PELSWIDTH | DM_PELSHEIGHT))
     setCaptureResolution(lpDevMode->dmPelsWidth,lpDevMode->dmPelsHeight);
+
+  return result;
 }
 
 static HGLRC __stdcall Mine_wglCreateContext(HDC hdc)
@@ -90,7 +93,7 @@ static BOOL __stdcall Mine_wglSwapLayerBuffers(HDC hdc,UINT fuPlanes)
 
 void initVideo_OpenGL()
 {
-  // don't hook ChangeDisplaySettingsEx right now, the window size thing seems to work well
+  DetourFunctionWithTrampoline((PBYTE) Real_ChangeDisplaySettingsEx,(PBYTE) Mine_ChangeDisplaySettingsEx);
   DetourFunctionWithTrampoline((PBYTE) Real_wglCreateContext,(PBYTE) Mine_wglCreateContext);
   DetourFunctionWithTrampoline((PBYTE) Real_wglCreateLayerContext, (PBYTE) Mine_wglCreateLayerContext);
   DetourFunctionWithTrampoline((PBYTE) Real_wglSwapBuffers,(PBYTE) Mine_wglSwapBuffers);

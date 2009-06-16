@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include <malloc.h>
 #include "videoencoder.h"
+#include "longarith.h"
 
 #include <dsound.h>
 #pragma comment (lib,"dsound.lib")
@@ -141,32 +142,20 @@ class MyDirectSoundBuffer8 : public IDirectSoundBuffer8
   BOOL Playing,Looping;
   LONG Volume;
   CRITICAL_SECTION BufferLock;
-  int PlayBaseFrame;
-  int LastFrameRead;
+  DWORD PlayCursor;
+  BOOL SkipAllowed;
+  DWORD SamplesPlayed;
+  DWORD GetPosThisFrame;
+  int FirstFrame;
 
-  DWORD FrameToPosition(int frame)
+  DWORD NextFrameSize()
   {
-    DWORD relFrame = frame - PlayBaseFrame;
-    DWORD samplePos = DWORD(1.0 * relFrame * Frequency / frameRate);
+    DWORD frame = getFrameTiming() - FirstFrame;
+    DWORD samplePos = UMulDiv(100 * frame,Frequency,frameRateScaled);
     DWORD bufferPos = samplePos * Format.nBlockAlign;
+    DWORD nextSize = bufferPos - SamplesPlayed;
 
-    if(bufferPos > Bytes)
-    {
-      if(!Looping)
-        bufferPos = 0;
-      else
-        bufferPos %= Bytes;
-    }
-
-    return bufferPos;
-  }
-
-  DWORD PlayCursor()
-  {
-    if(!Playing)
-      return 0;
-
-    return FrameToPosition(getFrameTiming());
+    return nextSize;
   }
 
   DWORD WriteCursor()
@@ -174,7 +163,7 @@ class MyDirectSoundBuffer8 : public IDirectSoundBuffer8
     if(!Playing)
       return 0;
 
-    return (PlayCursor() + 128 * Format.nBlockAlign) % Bytes;
+    return (PlayCursor + 128 * Format.nBlockAlign) % Bytes;
   }
 
 public:
@@ -184,6 +173,7 @@ public:
     Flags = flags;
     Buffer = new BYTE[bufBytes];
     Bytes = bufBytes;
+    memset(Buffer,0,bufBytes);
 
     if(fmt)
       Format = *fmt;
@@ -199,11 +189,14 @@ public:
     }
 
     Frequency = Format.nSamplesPerSec;
-    LastFrameRead = 0;
 
     Playing = FALSE;
     Looping = FALSE;
     Volume = 0;
+    PlayCursor = 0;
+    SkipAllowed = FALSE;
+    SamplesPlayed = 0;
+    GetPosThisFrame = 0;
 
     InitializeCriticalSection(&BufferLock);
   }
@@ -269,13 +262,49 @@ public:
   {
     EnterCriticalSection(&BufferLock);
 
-    if(pdwCurrentPlayCursor)
-      *pdwCurrentPlayCursor = PlayCursor();
+    // skip some milliseconds of silence at start
+    if(SkipAllowed)
+    {
+      DWORD maxskip = UMulDiv(Format.nSamplesPerSec,Format.nBlockAlign*params.SoundMaxSkip,1000);
+      DWORD pp = PlayCursor;
+      DWORD i;
 
-    if(pdwCurrentWriteCursor)
-      *pdwCurrentWriteCursor = WriteCursor();
+      // find out whether the next maxskip bytes are zero
+      for(i=0;i<maxskip;i++)
+      {
+        if(Buffer[pp])
+          break;
+
+        if(++pp == Bytes)
+          pp = 0;
+      }
+
+      // yes they are, skip them
+      if(i && i == maxskip)
+        PlayCursor = pp;
+      else
+        SkipAllowed = FALSE;
+    }
+
+    if(!Playing) // not playing, report zeroes
+    {
+      if(pdwCurrentPlayCursor)
+        *pdwCurrentPlayCursor = 0;
+
+      if(pdwCurrentWriteCursor)
+        *pdwCurrentWriteCursor = 0;
+    }
+    else // playing, so report current positions
+    {
+      if(pdwCurrentPlayCursor)
+        *pdwCurrentPlayCursor = PlayCursor;
+
+      if(pdwCurrentWriteCursor)
+        *pdwCurrentWriteCursor = WriteCursor();
+    }
 
     LeaveCriticalSection(&BufferLock);
+
     return S_OK;
   }
 
@@ -287,7 +316,7 @@ public:
       *pdwSizeWritten = size;
 
     if(pwfxFormat)
-      memcpy(pwfxFormat,&Format,*pdwSizeWritten);
+      memcpy(pwfxFormat,&Format,size);
 
     return S_OK;
   }
@@ -339,13 +368,13 @@ public:
       dwOffset = WriteCursor();
 
     if(dwFlags & DSBLOCK_ENTIREBUFFER)
-    {
-      dwOffset = 0;
       dwBytes = Bytes;
-    }
 
-    if(dwBytes > Bytes)
-      dwBytes = Bytes;
+    if(dwOffset >= Bytes || !dwBytes || dwBytes > Bytes)
+    {
+      LeaveCriticalSection(&BufferLock);
+      return DSERR_INVALIDPARAM;
+    }
 
     if(dwOffset + dwBytes <= Bytes) // no wrap
     {
@@ -373,14 +402,17 @@ public:
 
   virtual HRESULT __stdcall Play(DWORD dwReserved1,DWORD dwPriority,DWORD dwFlags)
   {
+    if(!Playing)
+      SkipAllowed = TRUE;
+
     Playing = TRUE;
     Looping = (dwFlags & DSBPLAY_LOOPING) ? TRUE : FALSE;
-    PlayBaseFrame = getFrameTiming();
 
     if(!(Flags & DSBCAPS_PRIMARYBUFFER))
     {
       encoder->SetAudioFormat(&Format);
       playBuffer = this;
+      FirstFrame = getFrameTiming();
     }
 
     return S_OK;
@@ -388,7 +420,7 @@ public:
 
   virtual HRESULT __stdcall SetCurrentPosition(DWORD dwNewPosition)
   {
-    LastFrameRead = dwNewPosition;
+    PlayCursor = dwNewPosition;
     return S_OK;
   }
 
@@ -457,21 +489,30 @@ public:
   void encodeLastFrameAudio()
   {
     EnterCriticalSection(&BufferLock);
-    // calculate number of samples processed since last frame, then encode
-    int cursor = PlayCursor();
-    int diff = cursor - LastFrameRead;
-    int rdiff = diff > 0 ? diff : diff + Bytes;
-    int align = Format.nBlockAlign;
 
-    if(diff <= 0) // wrap
+    // calculate number of samples processed since last frame, then encode
+    DWORD frameSize = NextFrameSize();
+    DWORD end = PlayCursor + frameSize;
+    DWORD align = Format.nBlockAlign;
+
+    if(end - PlayCursor > Bytes)
     {
-      encoder->WriteAudioFrame(Buffer + LastFrameRead,(Bytes - LastFrameRead) / align);
-      encoder->WriteAudioFrame(Buffer,cursor / align);
+      printLog("sound: more samples required per frame than buffer allows, increase frame rate\n");
+      end = PlayCursor + Bytes;
+    }
+
+    if(end > Bytes) // wrap
+    {
+      encoder->WriteAudioFrame(Buffer + PlayCursor,(Bytes - PlayCursor) / align);
+      encoder->WriteAudioFrame(Buffer,(end - Bytes) / align);
     }
     else // no wrap
-      encoder->WriteAudioFrame(Buffer + LastFrameRead,diff / align);
+      encoder->WriteAudioFrame(Buffer + PlayCursor,(end - PlayCursor) / align);
 
-    LastFrameRead = cursor;
+    PlayCursor = end % Bytes;
+    SamplesPlayed += frameSize;
+    GetPosThisFrame = 0;
+
     LeaveCriticalSection(&BufferLock);
   }
 };
@@ -522,10 +563,11 @@ public:
 
   virtual HRESULT __stdcall GetCaps(LPDSCAPS pDSCaps)
   {
-    if(pDSCaps->dwSize == sizeof(DSCAPS))
+    if(pDSCaps && pDSCaps->dwSize == sizeof(DSCAPS))
     {
       ZeroMemory(pDSCaps,sizeof(DSCAPS));
 
+      pDSCaps->dwSize = sizeof(DSCAPS);
       pDSCaps->dwFlags = DSCAPS_CONTINUOUSRATE
         | DSCAPS_PRIMARY16BIT | DSCAPS_PRIMARY8BIT
         | DSCAPS_PRIMARYMONO | DSCAPS_PRIMARYSTEREO
@@ -574,7 +616,6 @@ public:
 
   virtual HRESULT __stdcall Initialize(LPCGUID pcGuidDevice)
   {
-    printLog("sound: dsound initialize\n");
     return S_OK;
   }
 
@@ -629,7 +670,7 @@ HRESULT __stdcall Mine_CoCreateInstance(REFCLSID rclsid,LPUNKNOWN pUnkOuter,DWOR
 // --- now, waveout
 
 class WaveOutImpl;
-static WaveOutImpl *currentWaveOut;
+static WaveOutImpl *currentWaveOut = 0;
 
 class WaveOutImpl
 {
@@ -642,6 +683,7 @@ class WaveOutImpl
   int FirstFrame;
   int FirstWriteFrame;
   DWORD CurrentBufferPos;
+  DWORD CurrentSamplePos;
 
   void callbackMessage(UINT uMsg,DWORD dwParam1,DWORD dwParam2)
   {
@@ -725,6 +767,8 @@ public:
     FirstFrame = -1;
     FirstWriteFrame = -1;
 
+    CurrentSamplePos = 0;
+
     callbackMessage(WOM_OPEN,0,0);
   }
 
@@ -766,11 +810,11 @@ public:
       return MMSYSERR_NOERROR;
 
     // enqueue
-    if(FirstWriteFrame == -1) // officially start playback!
+    if(FirstFrame == -1) // officially start playback!
     {
-      FirstWriteFrame = getFrameTiming();
-      FirstFrame = FirstWriteFrame;
-
+      FirstFrame = getFrameTiming();
+      FirstWriteFrame = FirstFrame;
+      encoder->SetAudioFormat(&Format);
       currentWaveOut = this;
     }
 
@@ -815,8 +859,8 @@ public:
 
     if(mmt->wType != TIME_BYTES && mmt->wType != TIME_SAMPLES && mmt->wType != TIME_MS)
     {
-      printLog("sound: unsupported timecode format in waveOutGetPosition\n");
-      mmt->wType = TIME_SAMPLES;
+      printLog("sound: unsupported timecode format, defaulting to bytes\n");
+      mmt->wType = TIME_BYTES;
       return MMSYSERR_INVALPARAM;
     }
 
@@ -829,7 +873,7 @@ public:
     {
     case TIME_BYTES:
     case TIME_SAMPLES:
-      now = DWORD(1.0 * relFrame * Format.nSamplesPerSec / frameRate);
+      now = UMulDiv(relFrame*100,Format.nSamplesPerSec,frameRateScaled);
       if(mmt->wType == TIME_BYTES)
         mmt->u.cb = now * Format.nBlockAlign;
       else if(mmt->wType == TIME_SAMPLES)
@@ -837,7 +881,7 @@ public:
       break;
 
     case TIME_MS:
-      mmt->u.ms = DWORD(relFrame * 1000.0 / frameRate);
+      mmt->u.ms = UMulDiv(relFrame,100000,frameRateScaled);
       break;
     }
 
@@ -848,9 +892,15 @@ public:
   void encodeNoAudio(DWORD sampleCount)
   {
     // no new/delete, we do not know from where this might be called
-    void *buffer = _alloca(sampleCount * Format.nBlockAlign);
-    memset(buffer,0,sampleCount * Format.nBlockAlign);
-    encoder->WriteAudioFrame(buffer,sampleCount);
+    void *buffer = _alloca(256 * Format.nBlockAlign);
+    memset(buffer,0,256 * Format.nBlockAlign);
+
+    while(sampleCount)
+    {
+      int sampleBlock = min(sampleCount,256);
+      encoder->WriteAudioFrame(buffer,sampleBlock);
+      sampleCount -= sampleBlock;
+    }
   }
 
   void processFrame()
@@ -858,9 +908,9 @@ public:
     // calculate number of samples to write
     int frame = getFrameTiming() - FirstWriteFrame;
     int align = Format.nBlockAlign;
-    DWORD sampleOld = DWORD(1.0 * (frame - 1) * Format.nSamplesPerSec / frameRate);
-    DWORD sampleNew = DWORD(1.0 * frame * Format.nSamplesPerSec / frameRate);
-    DWORD sampleCount = sampleNew - sampleOld;
+
+    DWORD sampleNew = UMulDiv(frame * 100,Format.nSamplesPerSec,frameRateScaled);
+    DWORD sampleCount = sampleNew - CurrentSamplePos;
 
     if(!Current || Paused) // write one frame of no audio
     {
@@ -889,6 +939,8 @@ public:
       if(sampleCount && !Current) // ran out of audio data
         encodeNoAudio(sampleCount);
     }
+
+    CurrentSamplePos = sampleNew;
   }
 };
 
@@ -902,6 +954,16 @@ DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutRestart(HWAVEOUT hwo), waveOutR
 DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutMessage(HWAVEOUT hwo,UINT uMsg,DWORD_PTR dw1,DWORD_PTR dw2), waveOutMessage);
 DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutGetPosition(HWAVEOUT hwo,LPMMTIME pmmt,UINT cbmmt), waveOutGetPosition);
 
+static WaveOutImpl *waveOutLast = 0;
+
+static WaveOutImpl *GetWaveOutImpl(HWAVEOUT hwo)
+{
+  if(hwo)
+    return (WaveOutImpl *) hwo;
+
+  return waveOutLast;
+}
+
 MMRESULT __stdcall Mine_waveOutOpen(LPHWAVEOUT phwo,UINT uDeviceID,LPCWAVEFORMATEX pwfx,DWORD_PTR dwCallback,DWORD_PTR dwInstance,DWORD fdwOpen)
 {
   if(phwo)
@@ -910,6 +972,7 @@ MMRESULT __stdcall Mine_waveOutOpen(LPHWAVEOUT phwo,UINT uDeviceID,LPCWAVEFORMAT
       uDeviceID,pwfx->nSamplesPerSec,pwfx->wBitsPerSample,pwfx->nChannels);
 
     WaveOutImpl *impl = new WaveOutImpl(pwfx,dwCallback,dwInstance,fdwOpen);
+    waveOutLast = impl;
     *phwo = (HWAVEOUT) impl;
     return MMSYSERR_NOERROR;
   }
@@ -924,52 +987,51 @@ MMRESULT __stdcall Mine_waveOutOpen(LPHWAVEOUT phwo,UINT uDeviceID,LPCWAVEFORMAT
 
 MMRESULT __stdcall Mine_waveOutClose(HWAVEOUT hwo)
 {
-  WaveOutImpl *impl = (WaveOutImpl *) hwo;
-  delete impl;
+  delete GetWaveOutImpl(hwo);
 
   return MMSYSERR_NOERROR;
 }
 
 MMRESULT __stdcall Mine_waveOutPrepareHeader(HWAVEOUT hwo,LPWAVEHDR pwh,UINT cbwh)
 {
-  WaveOutImpl *impl = (WaveOutImpl *) hwo;
-  return impl->prepareHeader(pwh,cbwh);
+  WaveOutImpl *impl = GetWaveOutImpl(hwo);
+  return impl ? impl->prepareHeader(pwh,cbwh) : MMSYSERR_INVALHANDLE;
 }
 
 MMRESULT __stdcall Mine_waveOutUnprepareHeader(HWAVEOUT hwo,LPWAVEHDR pwh,UINT cbwh)
 {
-  WaveOutImpl *impl = (WaveOutImpl *) hwo;
-  return impl->unprepareHeader(pwh,cbwh);
+  WaveOutImpl *impl = GetWaveOutImpl(hwo);
+  return impl ? impl->unprepareHeader(pwh,cbwh) : MMSYSERR_INVALHANDLE;
 }
 
 MMRESULT __stdcall Mine_waveOutWrite(HWAVEOUT hwo,LPWAVEHDR pwh,UINT cbwh)
 {
-  WaveOutImpl *impl = (WaveOutImpl *) hwo;
-  return impl->write(pwh,cbwh);
+  WaveOutImpl *impl = GetWaveOutImpl(hwo);
+  return impl ? impl->write(pwh,cbwh) : MMSYSERR_INVALHANDLE;
 }
 
 MMRESULT __stdcall Mine_waveOutPause(HWAVEOUT hwo)
 {
-  WaveOutImpl *impl = (WaveOutImpl *) hwo;
-  return impl->pause();
+  WaveOutImpl *impl = GetWaveOutImpl(hwo);
+  return impl ? impl->pause() : MMSYSERR_INVALHANDLE;
 }
 
 MMRESULT __stdcall Mine_waveOutRestart(HWAVEOUT hwo)
 {
-  WaveOutImpl *impl = (WaveOutImpl *) hwo;
-  return impl->restart();
+  WaveOutImpl *impl = GetWaveOutImpl(hwo);
+  return impl ? impl->restart() : MMSYSERR_INVALHANDLE;
 }
 
 MMRESULT __stdcall Mine_waveOutMessage(HWAVEOUT hwo,UINT uMsg,DWORD_PTR dw1,DWORD_PTR dw2)
 {
-  WaveOutImpl *impl = (WaveOutImpl *) hwo;
-  return impl->message(uMsg,(DWORD) dw1,(DWORD) dw2);
+  WaveOutImpl *impl = GetWaveOutImpl(hwo);
+  return impl ? impl->message(uMsg,(DWORD) dw1,(DWORD) dw2) : MMSYSERR_INVALHANDLE;
 }
 
 MMRESULT __stdcall Mine_waveOutGetPosition(HWAVEOUT hwo,LPMMTIME pmmt,UINT cbmmt)
 {
-  WaveOutImpl *impl = (WaveOutImpl *) hwo;
-  return impl->getPosition(pmmt,cbmmt);
+  WaveOutImpl *impl = GetWaveOutImpl(hwo);
+  return impl ? impl->getPosition(pmmt,cbmmt) : MMSYSERR_INVALHANDLE;
 }
 
 // ----

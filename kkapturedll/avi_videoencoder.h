@@ -20,7 +20,7 @@ class AVIVideoEncoder : public VideoEncoder
 
   void Cleanup();
   void StartEncode();
-  void StartAudioEncode(tWAVEFORMATEX *fmt);
+  void StartAudioEncode(const tWAVEFORMATEX *fmt);
 
 public:
   AVIVideoEncoder(const char *name,float _fps,unsigned long codec,unsigned quality);
@@ -29,7 +29,7 @@ public:
   virtual void SetSize(int xRes,int yRes);
   virtual void WriteFrame(const unsigned char *buffer);
 
-  virtual void SetAudioFormat(tWAVEFORMATEX *fmt);
+  virtual void SetAudioFormat(const tWAVEFORMATEX *fmt);
   virtual void WriteAudioFrame(const void *buffer,int samples);
 };
 

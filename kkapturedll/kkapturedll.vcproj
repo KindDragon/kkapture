@@ -144,6 +144,12 @@
 				RelativePath=".\log.h">
 			</File>
 			<File
+				RelativePath=".\longarith.cpp">
+			</File>
+			<File
+				RelativePath=".\longarith.h">
+			</File>
+			<File
 				RelativePath=".\main.cpp">
 			</File>
 			<File
@@ -193,6 +199,12 @@
 			</File>
 			<File
 				RelativePath="video_directdraw.cpp">
+				<FileConfiguration
+					Name="Release|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						AssemblerOutput="4"/>
+				</FileConfiguration>
 			</File>
 			<File
 				RelativePath="video_opengl.cpp">

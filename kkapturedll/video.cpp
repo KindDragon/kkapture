@@ -32,11 +32,14 @@ void createCaptureBuffer(int width,int height)
 
 void setCaptureResolution(int width,int height)
 {
-  printLog("video: capturing at %dx%d\n",width,height);
-  createCaptureBuffer(width,height);
+  if(width != captureWidth || height != captureHeight)
+  {
+    printLog("video: capturing at %dx%d\n",width,height);
+    createCaptureBuffer(width,height);
 
-  if(encoder)
-    encoder->SetSize(width,height);
+    if(encoder)
+      encoder->SetSize(width,height);
+  }
 }
 
 // advance frame

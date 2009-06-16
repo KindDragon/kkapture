@@ -3,7 +3,7 @@
 #include "videoencoder.h"
 
 #include "d3d8.h"
-#pragma comment (lib,"d3d8.lib")
+#pragma comment(lib,"d3d8.lib")
 
 DETOUR_TRAMPOLINE(IDirect3D8 * __stdcall Real_Direct3DCreate8(UINT SDKVersion), Direct3DCreate8);
 
@@ -11,9 +11,9 @@ typedef HRESULT (__stdcall *PD3D8_CreateDevice)(IDirect3D8 *d3d,UINT a0,UINT a1,
 typedef ULONG (__stdcall *PD3DDevice8_Release)(IDirect3DDevice8 *dev);
 typedef HRESULT (__stdcall *PD3DDevice8_Present)(IDirect3DDevice8 *dev,DWORD a0,DWORD a1,DWORD a2,DWORD a3);
 
-static PD3D8_CreateDevice Real_D3D8_CreateDevice;
-static PD3DDevice8_Release Real_D3DDevice8_Release;
-static PD3DDevice8_Present Real_D3DDevice8_Present;
+static PD3D8_CreateDevice Real_D3D8_CreateDevice = 0;
+static PD3DDevice8_Release Real_D3DDevice8_Release = 0;
+static PD3DDevice8_Present Real_D3DDevice8_Present = 0;
 
 static IDirect3DSurface8 *captureSurf = 0;
 static ULONG startRefCount = 0;
@@ -74,8 +74,11 @@ static HRESULT __stdcall Mine_D3DDevice8_Present(IDirect3DDevice8 *dev,DWORD a0,
 {
   HRESULT hr = Real_D3DDevice8_Present(dev,a0,a1,a2,a3);
 
-  if(!captureD3DFrame8(dev))
-    captureGDIFullScreen();
+  if(params.CaptureVideo)
+  {
+    if(!captureD3DFrame8(dev))
+      captureGDIFullScreen();
+  }
 
   nextFrame();
   return hr;
@@ -101,19 +104,15 @@ static HRESULT __stdcall Mine_D3D8_CreateDevice(IDirect3D8 *d3d,UINT a0,UINT a1,
 
   if(SUCCEEDED(hr) && *a5)
   {
-    static bool firstCreate = true;
     IDirect3DDevice8 *dev = *a5;
 
-    if(firstCreate)
-    {
-      unprotectVTable(dev,97); 
-      Real_D3DDevice8_Release = (PD3DDevice8_Release) patchVTable(dev,2,(PBYTE) Mine_D3DDevice8_Release);
-      Real_D3DDevice8_Present = (PD3DDevice8_Present) patchVTable(dev,15,(PBYTE) Mine_D3DDevice8_Present);
-      printLog("video: IDirect3D8::CreateDevice successful, vtable patched.\n");
-      firstCreate = false;
-    }
-    else
-      printLog("video: IDirect3D8::CreateDevice successful.\n");
+    if(!Real_D3DDevice8_Release)
+      Real_D3DDevice8_Release = (PD3DDevice8_Release) DetourCOM(dev,2,(PBYTE) Mine_D3DDevice8_Release);
+
+    if(!Real_D3DDevice8_Present)
+      Real_D3DDevice8_Present = (PD3DDevice8_Present) DetourCOM(dev,15,(PBYTE) Mine_D3DDevice8_Present);
+
+    printLog("video: IDirect3D8::CreateDevice successful.\n");
 
     dev->AddRef();
     startRefCount = Real_D3DDevice8_Release(dev);
@@ -132,17 +131,10 @@ static IDirect3D8 * __stdcall Mine_Direct3DCreate8(UINT SDKVersion)
 
   if(d3d8)
   {
-    static bool firstCreate = true;
+    if(!Real_D3D8_CreateDevice)
+      Real_D3D8_CreateDevice = (PD3D8_CreateDevice) DetourCOM(d3d8,15,(PBYTE) Mine_D3D8_CreateDevice);
 
-    if(firstCreate)
-    {
-      unprotectVTable(d3d8,16);
-      Real_D3D8_CreateDevice = (PD3D8_CreateDevice) patchVTable(d3d8,15,(PBYTE) Mine_D3D8_CreateDevice);
-      printLog("video: IDirect3D8 object created, vtable patched.\n");
-      firstCreate = false;
-    }
-    else
-      printLog("video: IDirect3D8 object created.\n");
+    printLog("video: IDirect3D8 object created.\n");
   }
 
   return d3d8;
