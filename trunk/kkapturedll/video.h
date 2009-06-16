@@ -1,6 +1,9 @@
 // kkapture: intrusive demo video capturing.
 // by fabian "ryg/farbrausch" giesen 2005.
 
+#ifndef __VIDEO_H__
+#define __VIDEO_H__
+
 class VideoEncoder;
 
 // setup
@@ -30,3 +33,5 @@ extern unsigned char *captureData;
 
 extern HDC hCaptureDC;
 extern HBITMAP hCaptureBitmap;
+
+#endif

@@ -8,20 +8,28 @@
 #include <stdio.h>
 
 #include "video.h"
+#include "ui_control.h"
 
 VideoEncoder *encoder = 0;
 float frameRate = 10;
 int frameRateScaled = 1000;
 ParameterBlock params;
 
-bool initialized = false;
+static CRITICAL_SECTION shuttingDown;
+static bool initialized = false;
 
 void done()
 {
+  if(!initialized)
+    return;
+
+  EnterCriticalSection(&shuttingDown);
+
   if(initialized)
   {
     printLog("main: shutting down...\n");
 
+    doneUIControl();
     doneTiming();
     doneSound();
     doneVideo();
@@ -29,9 +37,14 @@ void done()
     delete encoder;
     encoder = 0;
 
+    printLog("main: everything ok, closing log.\n");
+
     closeLog();
     initialized = false;
   }
+
+  LeaveCriticalSection(&shuttingDown);
+  DeleteCriticalSection(&shuttingDown);
 }
 
 DETOUR_TRAMPOLINE(void __stdcall Real_ExitProcess(UINT uExitCode), ExitProcess);
@@ -46,11 +59,14 @@ void init()
 {
   bool error = true;
 
+  InitializeCriticalSection(&shuttingDown);
+
   initLog();
   printLog("main: initializing...\n");
   initTiming();
   initVideo();
   initSound();
+  initUIControl();
 
   // initialize params with all zero (ahem)
   memset(&params,0,sizeof(params));

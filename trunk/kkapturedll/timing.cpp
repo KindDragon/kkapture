@@ -2,15 +2,15 @@
 // by fabian "ryg/farbrausch" giesen 2005.
 
 #include "stdafx.h"
+#include "videocapturetimer.h"
 #include <malloc.h>
-
-#include "longarith.h"
 
 #pragma comment(lib, "winmm.lib")
 
 // events
 static HANDLE nextFrameEvent = 0;
 static HANDLE resyncEvent = 0;
+static HANDLE noOneWaiting = 0;
 static LONGLONG perfFrequency = 0;
 static volatile LONG resyncCounter = 0;
 static volatile LONG waitCounter = 0;
@@ -30,7 +30,9 @@ DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_timeKillEvent(UINT uTimerID), timeKill
 
 BOOL __stdcall Mine_QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency)
 {
-  lpFrequency->QuadPart = perfFrequency;
+  if(!IsBadWritePtr(lpFrequency,sizeof(LARGE_INTEGER)))
+    lpFrequency->QuadPart = perfFrequency;
+
   return TRUE;
 }
 
@@ -42,7 +44,9 @@ BOOL __stdcall Mine_QueryPerformanceCounter(LARGE_INTEGER *lpCounter)
   if(!frame)
     Real_QueryPerformanceCounter(&firstTime);
 
-  lpCounter->QuadPart = firstTime.QuadPart + ULongMulDiv(perfFrequency,frame*100,frameRateScaled);
+  if(!IsBadWritePtr(lpCounter,sizeof(LARGE_INTEGER)))
+    lpCounter->QuadPart = firstTime.QuadPart + ULongMulDiv(perfFrequency,frame*100,frameRateScaled);
+
   return TRUE;
 }
 
@@ -193,6 +197,17 @@ static void ProcessTimers(int TimeElapsed)
   LeaveCriticalSection(&TimerAllocLock);
 }
 
+static void IncrementWaiting()
+{
+  InterlockedIncrement(&waitCounter);
+}
+
+static void DecrementWaiting()
+{
+  if(InterlockedDecrement(&waitCounter) == 0)
+    SetEvent(noOneWaiting);
+}
+
 // --- everything that sleeps may accidentially take more than one frame.
 // this causes soundsystems to bug, so we have to fix it here.
 
@@ -202,12 +217,12 @@ VOID __stdcall Mine_Sleep(DWORD dwMilliseconds)
   {
     Real_WaitForSingleObject(resyncEvent,INFINITE);
 
-    InterlockedIncrement(&waitCounter);
+    IncrementWaiting();
     if(params.MakeSleepsLastOneFrame)
       Real_WaitForSingleObject(nextFrameEvent,dwMilliseconds);
     else
       Real_WaitForSingleObject(nextFrameEvent,params.SleepTimeout);
-    InterlockedDecrement(&waitCounter);
+    DecrementWaiting();
   }
   else
     Real_Sleep(0);
@@ -218,12 +233,12 @@ DWORD __stdcall Mine_WaitForSingleObject(HANDLE hHandle,DWORD dwMilliseconds)
   if(dwMilliseconds != INFINITE)
   {
     Real_WaitForSingleObject(resyncEvent,INFINITE);
-    InterlockedIncrement(&waitCounter);
+    IncrementWaiting();
 
     HANDLE handles[] = { hHandle, nextFrameEvent };
     DWORD result = Real_WaitForMultipleObjects(2,handles,FALSE,dwMilliseconds);
 
-    InterlockedDecrement(&waitCounter);
+    DecrementWaiting();
 
     if(result == WAIT_OBJECT_0+1)
       result = WAIT_TIMEOUT;
@@ -253,14 +268,14 @@ DWORD __stdcall Mine_WaitForMultipleObjects(DWORD nCount,CONST HANDLE *lpHandles
       handles[nCount] = nextFrameEvent;
 
       Real_WaitForSingleObject(resyncEvent,INFINITE);
-      InterlockedIncrement(&waitCounter);
-
+      IncrementWaiting();
+  
       DWORD result = Real_WaitForMultipleObjects(nCount+1,handles,FALSE,dwMilliseconds);
       if(result == WAIT_OBJECT_0+nCount)
         result = WAIT_TIMEOUT;
 
-      InterlockedDecrement(&waitCounter);
-
+      DecrementWaiting();
+  
       return result;
     }
   }
@@ -274,6 +289,7 @@ void initTiming()
 
   nextFrameEvent = CreateEvent(0,TRUE,FALSE,0);
   resyncEvent = CreateEvent(0,TRUE,TRUE,0);
+  noOneWaiting = CreateEvent(0,TRUE,FALSE,0);
 
   memset(EventTimer,0,sizeof(EventTimer));
   InitializeCriticalSection(&TimerAllocLock);
@@ -298,8 +314,15 @@ void doneTiming()
 {
   DeleteCriticalSection(&TimerAllocLock);
 
+  // we have to remove those, because code we call on deinitilization (especially directshow related)
+  // might be using them.
+  DetourRemove((PBYTE) Real_Sleep, (PBYTE) Mine_Sleep);
+  DetourRemove((PBYTE) Real_WaitForSingleObject, (PBYTE) Mine_WaitForSingleObject);
+  DetourRemove((PBYTE) Real_WaitForMultipleObjects, (PBYTE) Mine_WaitForMultipleObjects);
+
   CloseHandle(nextFrameEvent);
   CloseHandle(resyncEvent);
+  CloseHandle(noOneWaiting);
 
   timeEndPeriod(1);
 }
@@ -316,12 +339,19 @@ void nextFrameTiming()
 
   ResetEvent(resyncEvent);
   SetEvent(nextFrameEvent);
-  while(waitCounter)
-    Real_Sleep(5);
+  if(waitCounter)
+    ResetEvent(noOneWaiting);
+  else
+    SetEvent(noOneWaiting);
+
+  while(Real_WaitForSingleObject(noOneWaiting,5) == WAIT_TIMEOUT)
+    if(!waitCounter)
+      break;
+
   ResetEvent(nextFrameEvent);
   SetEvent(resyncEvent);
   
-  Real_Sleep(5);
+  //Real_Sleep(5);
 
   DWORD oldFrameTime = UMulDiv(currentFrame,1000*100,frameRateScaled);
   DWORD newFrameTime = UMulDiv(currentFrame+1,1000*100,frameRateScaled);

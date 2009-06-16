@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include "video.h"
 #include "videoencoder.h"
+#include "videocapturetimer.h"
 
 #include "d3d9.h"
 #pragma comment (lib,"d3d9.lib")
@@ -24,6 +25,13 @@ static IDirect3DSurface9 *captureInbetween = 0;
 static ULONG startRefCount = 0;
 static bool multiSampleMode = false;
 
+template<class T> static void swap(T &a,T &b)
+{
+  T t = a;
+  a = b;
+  b = t;
+}
+
 static bool captureD3DFrame9(IDirect3DDevice9 *dev)
 {
   if(!captureSurf)
@@ -38,8 +46,11 @@ static bool captureD3DFrame9(IDirect3DDevice9 *dev)
     // if multisampling is used, we need another inbetween blit
     if(multiSampleMode)
     {
-      if(FAILED(dev->StretchRect(back,0,captureInbetween,0,D3DTEXF_LINEAR)))
+      if(FAILED(dev->StretchRect(back,0,captureInbetween,0,D3DTEXF_NONE)))
+      {
+        printLog("video: StretchRect failed!\n");
         return false;
+      }
 
       captureSrc = captureInbetween;
     }
@@ -56,6 +67,8 @@ static bool captureD3DFrame9(IDirect3DDevice9 *dev)
         captureSurf->UnlockRect();
         error = false;
       }
+      else
+        printLog("video: lock+blit failed\n");
     }
 
     back->Release();
@@ -135,6 +148,8 @@ static HRESULT __stdcall Mine_D3D9_CreateDevice(IDirect3D9 *d3d,UINT a0,UINT a1,
 			a4->BackBufferFormat = D3DFMT_A8R8G8B8;
 		else
 			a4->BackBufferFormat = D3DFMT_X8R8G8B8;
+
+    a4->PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
   }
 
   HRESULT hr = Real_D3D9_CreateDevice(d3d,a0,a1,a2,a3,a4,a5);

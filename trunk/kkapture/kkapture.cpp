@@ -19,6 +19,7 @@ static TCHAR ExeName[_MAX_PATH];
 static TCHAR Arguments[MAX_ARGS];
 static ParameterBlock Params;
 
+// some dialog helpers
 static int GetCheckedRadioButton(HWND hWnd,int ctrlFirst,int ctrlLast)
 {
   for(int i=ctrlFirst;i<=ctrlLast;i++)
@@ -99,7 +100,7 @@ static void SaveSettingsToRegistry()
   }
 }
 
-INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPARAM lParam)
+static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPARAM lParam)
 {
   switch(uMsg)
   {
