@@ -4,7 +4,6 @@
 #ifndef __VTBL_PATCH_H__
 #define __VTBL_PATCH_H__
 
-void unprotectVTable(IUnknown *obj,int nVirtualFuncs);
-PBYTE patchVTable(IUnknown *obj,int vtableOffs,PBYTE newValue);
+PBYTE DetourCOM(IUnknown *obj,int vtableOffs,PBYTE newFunction);
 
 #endif

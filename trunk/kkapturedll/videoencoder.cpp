@@ -26,7 +26,7 @@ void DummyVideoEncoder::WriteFrame(const unsigned char *buffer)
 {
 }
 
-void DummyVideoEncoder::SetAudioFormat(tWAVEFORMATEX *fmt)
+void DummyVideoEncoder::SetAudioFormat(const tWAVEFORMATEX *fmt)
 {
 }
 

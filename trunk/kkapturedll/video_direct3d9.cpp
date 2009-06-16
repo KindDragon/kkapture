@@ -14,9 +14,9 @@ typedef HRESULT (__stdcall *PD3D9_CreateDevice)(IDirect3D9 *d3d,UINT a0,UINT a1,
 typedef ULONG (__stdcall *PD3DDevice9_Release)(IDirect3DDevice9 *dev);
 typedef HRESULT (__stdcall *PD3DDevice9_Present)(IDirect3DDevice9 *dev,DWORD a0,DWORD a1,DWORD a2,DWORD a3);
 
-static PD3D9_CreateDevice Real_D3D9_CreateDevice;
-static PD3DDevice9_Release Real_D3DDevice9_Release;
-static PD3DDevice9_Present Real_D3DDevice9_Present;
+static PD3D9_CreateDevice Real_D3D9_CreateDevice = 0;
+static PD3DDevice9_Release Real_D3DDevice9_Release = 0;
+static PD3DDevice9_Present Real_D3DDevice9_Present = 0;
 
 static IDirect3DTexture9 *captureTex = 0;
 static IDirect3DSurface9 *captureSurf = 0;
@@ -103,8 +103,11 @@ static HRESULT __stdcall Mine_D3DDevice9_Present(IDirect3DDevice9 *dev,DWORD a0,
 {
   HRESULT hr = Real_D3DDevice9_Present(dev,a0,a1,a2,a3);
 
-  if(!captureD3DFrame9(dev))
-    captureGDIFullScreen();
+  if(params.CaptureVideo)
+  {
+    if(!captureD3DFrame9(dev))
+      captureGDIFullScreen();
+  }
 
   nextFrame();
 
@@ -138,19 +141,15 @@ static HRESULT __stdcall Mine_D3D9_CreateDevice(IDirect3D9 *d3d,UINT a0,UINT a1,
 
   if(SUCCEEDED(hr) && *a5)
   {
-    static bool firstCreate = true;
     IDirect3DDevice9 *dev = *a5;
 
-    if(firstCreate)
-    {
-      unprotectVTable(dev,119);
-      Real_D3DDevice9_Release = (PD3DDevice9_Release) patchVTable(dev,2,(PBYTE) Mine_D3DDevice9_Release);
-      Real_D3DDevice9_Present = (PD3DDevice9_Present) patchVTable(dev,17,(PBYTE) Mine_D3DDevice9_Present);
-      printLog("video: IDirect3D9::CreateDevice successful, vtable patched.\n");
-      firstCreate = false;
-    }
-    else
-      printLog("video: IDirect3D9::CreateDevice successful.\n");
+    printLog("video: IDirect3D9::CreateDevice successful.\n");
+
+    if(!Real_D3DDevice9_Release)
+      Real_D3DDevice9_Release = (PD3DDevice9_Release) DetourCOM(dev,2,(PBYTE) Mine_D3DDevice9_Release);
+
+    if(!Real_D3DDevice9_Present)
+      Real_D3DDevice9_Present = (PD3DDevice9_Present) DetourCOM(dev,17,(PBYTE) Mine_D3DDevice9_Present);
 
     dev->AddRef();
     startRefCount = Real_D3DDevice9_Release(dev);
@@ -179,17 +178,10 @@ static IDirect3D9 * __stdcall Mine_Direct3DCreate9(UINT SDKVersion)
 
   if(d3d9)
   {
-    static bool firstCreate = true;
+    printLog("video: IDirect3D9 object created.\n");
 
-    if(firstCreate)
-    {
-      unprotectVTable(d3d9,17);
-      Real_D3D9_CreateDevice = (PD3D9_CreateDevice) patchVTable(d3d9,16,(PBYTE) Mine_D3D9_CreateDevice);
-      printLog("video: IDirect3D9 object created, vtable patched.\n");
-      firstCreate = false;
-    }
-    else
-      printLog("video: IDirect3D9 object created.\n");
+    if(!Real_D3D9_CreateDevice)
+      Real_D3D9_CreateDevice = (PD3D9_CreateDevice) DetourCOM(d3d9,16,(PBYTE) Mine_D3D9_CreateDevice);
   }
 
   return d3d9;

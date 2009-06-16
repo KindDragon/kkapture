@@ -1,0 +1,23 @@
+version 0.03:
+* waveout capturing finally works (now that was one stupid bug)
+* directdraw/old d3d support (both software and hardware)
+* kkapture now sets the executables' directory as current working dir before starting
+* "skip silence" option added (required for e.g. fr-08); currently only works for
+  directsound
+* "make sleeps last one frame" option added (required for some old BASS and FMOD
+  versions to work correctly)
+* the .bmp/.wav writer now compensates for frames at the beginning without sound
+* capture audio/capture video flags
+
+version 0.02:
+* direct xvid/divx encoding works now.
+* windowed capture support for both opengl and d3d - beware, some demos do not use correct window sizes in windowed mode, so you get e.g. a 630x472 capture for a 640x480 demo - most video codecs don't like sizes that aren't multiples of 4.
+* opengl capturing bugfix - on swapbuffers(), frames were accidentially advanced twice.
+* some QueryPerformanceCounter-related fixes.
+* vastly improved Direct3D9 capture speed.
+* Direct3D8 support (co-written by kb/farbrausch).
+* .bmp/.wav output added (uncompressed highres captures easily hit the avifile 4gb limit).
+* lots of tiny fixes here and there. 
+
+version 0.01:
+* initial release; still missing d3d8, ddraw support, waveout completely untested. 

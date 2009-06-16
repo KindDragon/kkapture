@@ -3,22 +3,11 @@
 
 #include "stdafx.h"
 
-void unprotectVTable(IUnknown *obj,int nVirtualFuncs)
-{
-  PBYTE **vtblPtr = (PBYTE **) obj;
-  DWORD oldProtect;
-  BOOL res = VirtualProtect(*vtblPtr,nVirtualFuncs * sizeof(PBYTE),PAGE_EXECUTE_READWRITE,&oldProtect);
-
-  if(!res)
-    printLog("vtbl: VirtualProtect failed\n");
-}
-
-PBYTE patchVTable(IUnknown *obj,int vtableOffs,PBYTE newValue)
+PBYTE DetourCOM(IUnknown *obj,int vtableOffs,PBYTE newFunction)
 {
   PBYTE **vtblPtr = (PBYTE **) obj;
   PBYTE *vtbl = *vtblPtr;
-  PBYTE old = vtbl[vtableOffs];
-
-  vtbl[vtableOffs] = newValue;
-  return old;
+  PBYTE target = vtbl[vtableOffs];
+  
+  return DetourFunction(target,newFunction);
 }

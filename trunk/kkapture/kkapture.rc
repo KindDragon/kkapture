@@ -26,14 +26,14 @@ LANGUAGE LANG_GERMAN, SUBLANG_GERMAN
 // Dialog
 //
 
-IDD_MAINWIN DIALOGEX 0, 0, 258, 125
+IDD_MAINWIN DIALOGEX 0, 0, 258, 166
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | 
     WS_SYSMENU
-CAPTION ".kkapture 0.02"
+CAPTION ".kkapture 0.03"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
-    DEFPUSHBUTTON   "kkapture!",IDOK,149,104,50,14
-    PUSHBUTTON      "Exit",IDCANCEL,201,104,50,14
+    DEFPUSHBUTTON   "kkapture!",IDOK,149,145,50,14
+    PUSHBUTTON      "Exit",IDCANCEL,201,145,50,14
     EDITTEXT        IDC_DEMO,51,7,146,13,ES_AUTOHSCROLL
     LTEXT           "Demo:",IDC_STATIC,9,9,22,8
     PUSHBUTTON      "Browse...",IDC_BDEMO,201,7,50,13
@@ -51,6 +51,15 @@ BEGIN
     GROUPBOX        "AVI Encoding Options",IDC_STATIC,7,73,244,26
     LTEXT           "Video Codec:",IDC_VIDEOCODEC,14,84,176,8
     PUSHBUTTON      "Pick...",IDC_VCPICK,214,82,30,12
+    GROUPBOX        "Tweaking",IDC_STATIC,7,102,244,37
+    CONTROL         "Capture Video",IDC_VCAPTURE,"Button",BS_AUTOCHECKBOX | 
+                    WS_TABSTOP,14,113,61,10
+    CONTROL         "Capture Audio",IDC_ACAPTURE,"Button",BS_AUTOCHECKBOX | 
+                    WS_TABSTOP,14,125,62,10
+    CONTROL         "Skip digital silence at start",IDC_SKIPSILENCE,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,121,113,99,10
+    CONTROL         "Make Sleep() last one frame",IDC_SLEEPLAST,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,121,125,105,10
 END
 
 
@@ -67,7 +76,7 @@ BEGIN
         LEFTMARGIN, 7
         RIGHTMARGIN, 251
         TOPMARGIN, 7
-        BOTTOMMARGIN, 118
+        BOTTOMMARGIN, 159
     END
 END
 #endif    // APSTUDIO_INVOKED

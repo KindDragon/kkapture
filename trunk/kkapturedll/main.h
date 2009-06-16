@@ -29,6 +29,15 @@ struct ParameterBlock
   EncoderType Encoder;
   DWORD VideoCodec;
   DWORD VideoQuality;
+
+  BOOL CaptureVideo;
+  BOOL CaptureAudio;
+
+  DWORD SoundMaxSkip; // in milliseconds
+  BOOL MakeSleepsLastOneFrame;
+  DWORD SleepTimeout;
 };
+
+extern ParameterBlock params;
 
 #endif

@@ -14,6 +14,7 @@ struct AVIVideoEncoder::Internal
   PAVISTREAM vid,vidC;
   PAVISTREAM aud;
   bool initialized;
+  bool formatSet;
 };
 
 void AVIVideoEncoder::Cleanup()
@@ -90,6 +91,7 @@ void AVIVideoEncoder::StartEncode()
   error = false;
   printLog("avi: opened video stream at %.2f fps\n",fps);
   frame = 0;
+  d->formatSet = true;
 
 cleanup:
   LeaveCriticalSection(&d->lock);
@@ -98,7 +100,7 @@ cleanup:
     Cleanup();
 }
 
-void AVIVideoEncoder::StartAudioEncode(tWAVEFORMATEX *fmt)
+void AVIVideoEncoder::StartAudioEncode(const tWAVEFORMATEX *fmt)
 {
   AVISTREAMINFO asi;
   bool error = true;
@@ -125,7 +127,7 @@ void AVIVideoEncoder::StartAudioEncode(tWAVEFORMATEX *fmt)
   }
 
   // set format
-  if(AVIStreamSetFormat(d->aud,0,fmt,sizeof(WAVEFORMATEX)) != AVIERR_OK)
+  if(AVIStreamSetFormat(d->aud,0,(LPVOID) fmt,sizeof(WAVEFORMATEX)) != AVIERR_OK)
   {
     printLog("avi: AVIStreamSetFormat (audio) failed\n");
     goto cleanup;
@@ -137,11 +139,11 @@ void AVIVideoEncoder::StartAudioEncode(tWAVEFORMATEX *fmt)
   audioSample = 0;
   audioBytesSample = fmt->nBlockAlign;
 
-  // fill already written frames with 0 sound
+  // fill already written frames with no sound
   unsigned char *buffer = new unsigned char[audioBytesSample * 1024];
-  memset(buffer,0,audioBytesSample * 1024);
   int sampleFill = int(1.0f * fmt->nSamplesPerSec * frame / fps);
 
+  memset(buffer,0,audioBytesSample * 1024);
   for(int samplePos=0;samplePos<sampleFill;samplePos+=1024)
     WriteAudioFrame(buffer,min(sampleFill-samplePos,1024));
 
@@ -171,6 +173,7 @@ AVIVideoEncoder::AVIVideoEncoder(const char *name,float _fps,unsigned long codec
   d->vidC = 0;
   d->aud = 0;
   d->initialized = true;
+  d->formatSet = false;
   InitializeCriticalSection(&d->lock);
 
   AVIFileInit();
@@ -231,8 +234,6 @@ void AVIVideoEncoder::SetSize(int _xRes,int _yRes)
 {
   xRes = _xRes;
   yRes = _yRes;
-  if(d->file && !frame)
-    StartEncode();
 }
 
 void AVIVideoEncoder::WriteFrame(const unsigned char *buffer)
@@ -240,7 +241,10 @@ void AVIVideoEncoder::WriteFrame(const unsigned char *buffer)
   // encode the frame
   EnterCriticalSection(&d->lock);
 
-  if(d->vidC)
+  if(!frame && !d->formatSet && xRes && yRes && params.CaptureVideo)
+    StartEncode();
+
+  if(d->formatSet && d->vidC)
   {
     AVIStreamWrite(d->vidC,frame,1,(void *)buffer,3*xRes*yRes,0,0,0);
     frame++;
@@ -249,9 +253,9 @@ void AVIVideoEncoder::WriteFrame(const unsigned char *buffer)
   LeaveCriticalSection(&d->lock);
 }
 
-void AVIVideoEncoder::SetAudioFormat(tWAVEFORMATEX *fmt)
+void AVIVideoEncoder::SetAudioFormat(const tWAVEFORMATEX *fmt)
 {
-  if(!d->aud)
+  if(params.CaptureAudio && !d->aud)
     StartAudioEncode(fmt);
 }
 

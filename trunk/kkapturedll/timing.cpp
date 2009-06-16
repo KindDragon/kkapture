@@ -4,6 +4,8 @@
 #include "stdafx.h"
 #include <malloc.h>
 
+#include "longarith.h"
+
 #pragma comment(lib, "winmm.lib")
 
 // events
@@ -23,6 +25,8 @@ DETOUR_TRAMPOLINE(VOID __stdcall Real_Sleep(DWORD dwMilliseconds), Sleep);
 DETOUR_TRAMPOLINE(DWORD __stdcall Real_WaitForSingleObject(HANDLE hHandle,DWORD dwMilliseconds), WaitForSingleObject);
 DETOUR_TRAMPOLINE(DWORD __stdcall Real_WaitForMultipleObjects(DWORD nCount,CONST HANDLE *lpHandles,BOOL bWaitAll,DWORD dwMilliseconds), WaitForMultipleObjects);
 DETOUR_TRAMPOLINE(void __stdcall Real_GetSystemTimeAsFileTime(FILETIME *time), GetSystemTimeAsFileTime);
+DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_timeSetEvent(UINT uDelay,UINT uResolution,LPTIMECALLBACK fptc,DWORD_PTR dwUser,UINT fuEvent), timeSetEvent);
+DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_timeKillEvent(UINT uTimerID), timeKillEvent);
 
 BOOL __stdcall Mine_QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency)
 {
@@ -38,7 +42,7 @@ BOOL __stdcall Mine_QueryPerformanceCounter(LARGE_INTEGER *lpCounter)
   if(!frame)
     Real_QueryPerformanceCounter(&firstTime);
 
-  lpCounter->QuadPart = firstTime.QuadPart + LONGLONG(frame * 1.0 * perfFrequency / frameRate);
+  lpCounter->QuadPart = firstTime.QuadPart + ULongMulDiv(perfFrequency,frame*100,frameRateScaled);
   return TRUE;
 }
 
@@ -51,7 +55,7 @@ DWORD __stdcall Mine_GetTickCount()
   if(!frame)
     firstTime = Real_GetTickCount();
 
-  return firstTime + MulDiv(frame,1000*100,frameRateScaled);
+  return firstTime + UMulDiv(frame,1000*100,frameRateScaled);
 }
 
 DWORD __stdcall Mine_timeGetTime()
@@ -62,7 +66,7 @@ DWORD __stdcall Mine_timeGetTime()
   if(!frame)
     firstTime = Real_timeGetTime();
 
-  return firstTime + MulDiv(frame,1000*100,frameRateScaled);
+  return firstTime + UMulDiv(frame,1000*100,frameRateScaled);
 }
 
 MMRESULT __stdcall Mine_timeGetSystemTime(MMTIME *pmmt,UINT cbmmt)
@@ -80,10 +84,113 @@ void __stdcall Mine_GetSystemTimeAsFileTime(FILETIME *time)
     Real_GetSystemTimeAsFileTime(&firstTime);
 
   LONGLONG baseTime = *((LONGLONG *) &firstTime);
-  LONGLONG elapsedSince = LONGLONG(frame * 10000000.0 / frameRate);
+  LONGLONG elapsedSince = ULongMulDiv(10000000,frame,frameRateScaled);
   LONGLONG finalTime = baseTime + elapsedSince;
 
   *((LONGLONG *) time) = finalTime;
+}
+
+// --- event timers
+
+static const int MaxEventTimers = 256;
+
+struct EventTimerDef
+{
+  UINT Delay;
+  LPTIMECALLBACK Callback;
+  DWORD_PTR User;
+  UINT Flags;
+  int Counter;
+  bool Dead;
+  bool Used;
+};
+
+static EventTimerDef EventTimer[MaxEventTimers];
+static CRITICAL_SECTION TimerAllocLock;
+
+static MMRESULT __stdcall Mine_timeSetEvent(UINT uDelay,UINT uResolution,LPTIMECALLBACK fptc,DWORD_PTR dwUser,UINT fuEvent)
+{
+  if(!uDelay) // don't even try to create a timer without delay
+    return 0;
+
+  EnterCriticalSection(&TimerAllocLock);
+
+  // try to find a free slot
+  for(int i=0;i<MaxEventTimers;i++)
+    if(!EventTimer[i].Used)
+      break;
+
+  if(i == MaxEventTimers) // no free slot found
+  {
+    LeaveCriticalSection(&TimerAllocLock);
+    return 0;
+  }
+
+  // fill out timer struct
+  EventTimerDef *timer = &EventTimer[i];
+  timer->Delay = uDelay;
+  timer->Counter = uDelay;
+  timer->Callback = fptc;
+  timer->User = dwUser;
+  timer->Flags = fuEvent;
+  timer->Dead = false;
+  timer->Used = true;
+
+  LeaveCriticalSection(&TimerAllocLock);
+  return i + 1;
+}
+
+static MMRESULT __stdcall Mine_timeKillEvent(UINT uTimerID)
+{
+  if(!uTimerID || uTimerID > MaxEventTimers)
+    return MMSYSERR_INVALPARAM;
+
+  EventTimerDef *timer = &EventTimer[uTimerID-1];
+  if(!timer->Used)
+    return MMSYSERR_INVALPARAM;
+
+  timer->Used = false;
+  return TIMERR_NOERROR;
+}
+
+static void FireTimer(UINT index)
+{
+  EventTimerDef *timer = &EventTimer[index];
+
+  if(timer->Flags & TIME_CALLBACK_EVENT_SET)
+    SetEvent((HANDLE) timer->Callback);
+  else if(timer->Flags & TIME_CALLBACK_EVENT_PULSE)
+    PulseEvent((HANDLE) timer->Callback);
+  else // function
+    timer->Callback(index+1,0,timer->User,0,0);
+}
+
+static void ProcessTimers(int TimeElapsed)
+{
+  EnterCriticalSection(&TimerAllocLock);
+
+  for(int i=0;i<MaxEventTimers;i++)
+  {
+    EventTimerDef *timer = &EventTimer[i];
+    
+    if(timer->Used && !timer->Dead)
+    {
+      timer->Counter -= TimeElapsed;
+      while(timer->Counter <= 0)
+      {
+        FireTimer(i);
+        if(timer->Flags & TIME_PERIODIC)
+          timer->Counter += timer->Delay;
+        else
+        {
+          timer->Dead = true;
+          break;
+        }
+      }
+    }
+  }
+
+  LeaveCriticalSection(&TimerAllocLock);
 }
 
 // --- everything that sleeps may accidentially take more than one frame.
@@ -96,7 +203,10 @@ VOID __stdcall Mine_Sleep(DWORD dwMilliseconds)
     Real_WaitForSingleObject(resyncEvent,INFINITE);
 
     InterlockedIncrement(&waitCounter);
-    Real_WaitForSingleObject(nextFrameEvent,dwMilliseconds);
+    if(params.MakeSleepsLastOneFrame)
+      Real_WaitForSingleObject(nextFrameEvent,dwMilliseconds);
+    else
+      Real_WaitForSingleObject(nextFrameEvent,params.SleepTimeout);
     InterlockedDecrement(&waitCounter);
   }
   else
@@ -165,6 +275,9 @@ void initTiming()
   nextFrameEvent = CreateEvent(0,TRUE,FALSE,0);
   resyncEvent = CreateEvent(0,TRUE,TRUE,0);
 
+  memset(EventTimer,0,sizeof(EventTimer));
+  InitializeCriticalSection(&TimerAllocLock);
+
   LARGE_INTEGER freq;
   QueryPerformanceFrequency(&freq);
   perfFrequency = freq.QuadPart;
@@ -177,10 +290,14 @@ void initTiming()
   DetourFunctionWithTrampoline((PBYTE) Real_WaitForSingleObject, (PBYTE) Mine_WaitForSingleObject);
   DetourFunctionWithTrampoline((PBYTE) Real_WaitForMultipleObjects, (PBYTE) Mine_WaitForMultipleObjects);
   DetourFunctionWithTrampoline((PBYTE) Real_GetSystemTimeAsFileTime, (PBYTE) Mine_GetSystemTimeAsFileTime);
+  DetourFunctionWithTrampoline((PBYTE) Real_timeSetEvent, (PBYTE) Mine_timeSetEvent);
+  DetourFunctionWithTrampoline((PBYTE) Real_timeKillEvent, (PBYTE) Mine_timeKillEvent);
 }
 
 void doneTiming()
 {
+  DeleteCriticalSection(&TimerAllocLock);
+
   CloseHandle(nextFrameEvent);
   CloseHandle(resyncEvent);
 
@@ -205,6 +322,10 @@ void nextFrameTiming()
   SetEvent(resyncEvent);
   
   Real_Sleep(5);
+
+  DWORD oldFrameTime = UMulDiv(currentFrame,1000*100,frameRateScaled);
+  DWORD newFrameTime = UMulDiv(currentFrame+1,1000*100,frameRateScaled);
+  ProcessTimers(newFrameTime - oldFrameTime);
 
   currentFrame++;
 }

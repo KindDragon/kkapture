@@ -90,9 +90,9 @@ void BMPVideoEncoder::WriteFrame(const unsigned char *buffer)
   }
 }
 
-void BMPVideoEncoder::SetAudioFormat(tWAVEFORMATEX *fmt)
+void BMPVideoEncoder::SetAudioFormat(const tWAVEFORMATEX *fmt)
 {
-  if(!intn->wave)
+  if(params.CaptureAudio && !intn->wave)
   {
     char filename[512];
     strcpy(filename,prefix);
@@ -112,6 +112,14 @@ void BMPVideoEncoder::SetAudioFormat(tWAVEFORMATEX *fmt)
       fwrite(fmt,1,len,intn->wave);
       fwrite(data,1,sizeof(data)-1,intn->wave);
     }
+
+    // fill already written frames with no sound
+    unsigned char *buffer = new unsigned char[fmt->nBlockAlign * 1024];
+    int sampleFill = MulDiv(frame*100,fmt->nSamplesPerSec,frameRateScaled);
+
+    memset(buffer,0,fmt->nBlockAlign * 1024);
+    for(int samplePos=0;samplePos<sampleFill;samplePos+=1024)
+      WriteAudioFrame(buffer,min(sampleFill-samplePos,1024));
   }
 }
 
