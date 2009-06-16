@@ -30,10 +30,29 @@ void createCaptureBuffer(int width,int height)
   captureData = new unsigned char[width*height*4];
 }
 
-void setCaptureResolution(int width,int height)
+void setCaptureResolution(int inWidth,int inHeight)
 {
+  bool aligned;
+  int width,height;
+
+  if((inWidth & 3) || (inHeight & 3))
+  {
+    width = inWidth & ~3;
+    height = inHeight & ~3;
+    aligned = true;
+  }
+  else
+  {
+    width = inWidth;
+    height = inHeight;
+    aligned = false;
+  }
+
   if(width != captureWidth || height != captureHeight)
   {
+    if(aligned)
+      printLog("video: width/height not divisible by 4, aligning down (%dx%d)\n",inWidth,inHeight);
+
     printLog("video: capturing at %dx%d\n",width,height);
     createCaptureBuffer(width,height);
 

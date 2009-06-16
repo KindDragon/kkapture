@@ -84,7 +84,7 @@ void __stdcall Mine_GetSystemTimeAsFileTime(FILETIME *time)
     Real_GetSystemTimeAsFileTime(&firstTime);
 
   LONGLONG baseTime = *((LONGLONG *) &firstTime);
-  LONGLONG elapsedSince = ULongMulDiv(10000000,frame,frameRateScaled);
+  LONGLONG elapsedSince = ULongMulDiv(1000000000,frame,frameRateScaled);
   LONGLONG finalTime = baseTime + elapsedSince;
 
   *((LONGLONG *) time) = finalTime;
