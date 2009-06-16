@@ -90,7 +90,8 @@ static HRESULT __stdcall Mine_D3D8_CreateDevice(IDirect3D8 *d3d,UINT a0,UINT a1,
   if(a4)
   {
     a4->BackBufferCount = 1;
-    a4->SwapEffect = D3DSWAPEFFECT_COPY;
+    if(a4->MultiSampleType == D3DMULTISAMPLE_NONE)
+      a4->SwapEffect = D3DSWAPEFFECT_COPY;
 
     // force back buffer format to something we can read
     D3DFORMAT fmt = a4->BackBufferFormat;
