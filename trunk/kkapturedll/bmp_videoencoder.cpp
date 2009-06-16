@@ -9,14 +9,20 @@ struct BMPVideoEncoder::Internal
 {
   BITMAPFILEHEADER bmfh;
   BITMAPINFOHEADER bmih;
+  WAVEFORMATEX wfx;
+  FILE *wave;
 };
 
-BMPVideoEncoder::BMPVideoEncoder(const char *namePrefix)
+BMPVideoEncoder::BMPVideoEncoder(const char *fileName)
 {
-  strncpy(prefix,namePrefix,240);
-  prefix[240] = 0;
+  char drive[_MAX_DRIVE],dir[_MAX_DIR],fname[_MAX_FNAME],ext[_MAX_EXT];
+
+  _splitpath(fileName,drive,dir,fname,ext);
+  _makepath(prefix,drive,dir,fname,"");
   xRes = yRes = 0;
+  
   intn = new Internal;
+  intn->wave = 0;
 
   ZeroMemory(&intn->bmfh,sizeof(BITMAPFILEHEADER));
   ZeroMemory(&intn->bmih,sizeof(BITMAPINFOHEADER));
@@ -33,6 +39,22 @@ BMPVideoEncoder::BMPVideoEncoder(const char *namePrefix)
 
 BMPVideoEncoder::~BMPVideoEncoder()
 {
+  if(intn->wave)
+  {
+    // finish the wave file by writing overall and data chunk lengths
+    long fileLen = ftell(intn->wave);
+
+    long riffLen = fileLen - 8;
+    fseek(intn->wave,4,SEEK_SET);
+    fwrite(&riffLen,1,sizeof(long),intn->wave);
+
+    long dataLen = fileLen - 44;
+    fseek(intn->wave,40,SEEK_SET);
+    fwrite(&dataLen,1,sizeof(long),intn->wave);
+
+    fclose(intn->wave);
+  }
+
   delete intn;
 }
 
@@ -53,7 +75,7 @@ void BMPVideoEncoder::WriteFrame(const unsigned char *buffer)
   if(xRes && yRes)
   {
     // create filename
-    char filename[256];
+    char filename[512];
     sprintf(filename,"%s%04d.bmp",prefix,frame);
 
     // create file, write headers+image
@@ -70,8 +92,31 @@ void BMPVideoEncoder::WriteFrame(const unsigned char *buffer)
 
 void BMPVideoEncoder::SetAudioFormat(tWAVEFORMATEX *fmt)
 {
+  if(!intn->wave)
+  {
+    char filename[512];
+    strcpy(filename,prefix);
+    strcat(filename,".wav");
+
+    intn->wfx = *fmt;
+    intn->wave = fopen(filename,"wb");
+    
+    if(intn->wave)
+    {
+      static unsigned char header[] = "RIFF\0\0\0\0WAVEfmt ";
+      static unsigned char data[] = "data\0\0\0\0";
+
+      fwrite(header,1,sizeof(header)-1,intn->wave);
+      DWORD len = sizeof(WAVEFORMATEX)-2;
+      fwrite(&len,1,sizeof(DWORD),intn->wave);
+      fwrite(fmt,1,len,intn->wave);
+      fwrite(data,1,sizeof(data)-1,intn->wave);
+    }
+  }
 }
 
 void BMPVideoEncoder::WriteAudioFrame(const void *buffer,int samples)
 {
+  if(intn->wave)
+    fwrite(buffer,intn->wfx.nBlockAlign,samples,intn->wave);
 }

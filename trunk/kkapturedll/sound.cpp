@@ -5,11 +5,130 @@
 #include <malloc.h>
 #include "videoencoder.h"
 
+#include <dsound.h>
+#pragma comment (lib,"dsound.lib")
+#pragma comment (lib,"dxguid.lib")
+#pragma comment(lib, "winmm.lib")
+
 // my own directsound fake!
 class MyDirectSound8;
 class MyDirectSoundBuffer8;
 
 static MyDirectSoundBuffer8 *playBuffer = 0;
+
+class MyDirectSound3DListener8 : public IDirectSound3DListener8
+{
+  int RefCount;
+
+public:
+  MyDirectSound3DListener8()
+    : RefCount(1)
+  {
+  }
+
+  // IUnknown methods
+  virtual HRESULT __stdcall QueryInterface(REFIID iid,LPVOID *ptr)
+  {
+    if(iid == IID_IDirectSound3DListener || iid == IID_IDirectSound3DListener8)
+    {
+      *ptr = this;
+      AddRef();
+      return S_OK;
+    }
+    else
+      return E_NOINTERFACE;
+  }
+
+  virtual ULONG __stdcall AddRef()
+  {
+    return ++RefCount;
+  }
+
+  virtual ULONG __stdcall Release()
+  {
+    ULONG ret = --RefCount;
+    if(!RefCount)
+      delete this;
+
+    return ret;
+  }
+
+  // IDirectSound3DListener methods
+  virtual HRESULT __stdcall GetAllParameters(LPDS3DLISTENER pListener)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall GetDistanceFactor(D3DVALUE* pflDistanceFactor)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall GetDopplerFactor(D3DVALUE* pflDistanceFactor)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall GetOrientation(D3DVECTOR* pvOrientFront, D3DVECTOR* pvOrientTop)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall GetPosition(D3DVECTOR* pvPosition)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall GetRolloffFactor(D3DVALUE* pflRolloffFactor)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall GetVelocity(D3DVECTOR* pvVelocity)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall SetAllParameters(LPCDS3DLISTENER pcListener,DWORD dwApply)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall SetDistanceFactor(D3DVALUE flDistanceFactor,DWORD dwApply)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall SetDopplerFactor(D3DVALUE flDopplerFactor,DWORD dwApply)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall SetOrientation(D3DVALUE xFront,D3DVALUE yFront,D3DVALUE zFront,D3DVALUE xTop,D3DVALUE yTop,D3DVALUE zTop,DWORD dwApply)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall SetPosition(D3DVALUE x,D3DVALUE y,D3DVALUE z,DWORD dwApply)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall SetRolloffFactor(D3DVALUE flRolloffFactor,DWORD dwApply)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall SetVelocity(D3DVALUE x,D3DVALUE y,D3DVALUE z,DWORD dwApply)
+  {
+    return E_NOTIMPL;
+  }
+
+  virtual HRESULT __stdcall CommitDeferredSettings()
+  {
+    return S_OK;
+  }
+};
 
 class MyDirectSoundBuffer8 : public IDirectSoundBuffer8
 {
@@ -102,6 +221,11 @@ public:
     {
       *ptr = this;
       AddRef();
+      return S_OK;
+    }
+    else if(iid == IID_IDirectSound3DListener || iid == IID_IDirectSound3DListener8)
+    {
+      *ptr = new MyDirectSound3DListener8;
       return S_OK;
     }
     else
@@ -513,8 +637,8 @@ class WaveOutImpl
   DWORD_PTR Callback;
   DWORD_PTR CallbackInstance;
   DWORD OpenFlags;
-  WAVEHDR *Head,*Tail,*Current;
-  BOOL Paused,InLoop;
+  WAVEHDR *Head,*Current,*Tail;
+  bool Paused,InLoop;
   int FirstFrame;
   int FirstWriteFrame;
   DWORD CurrentBufferPos;
@@ -541,54 +665,48 @@ class WaveOutImpl
     }
   }
 
-  void doneNextBuffer(WAVEHDR *start)
+  void doneBuffer()
   {
-    WAVEHDR *buffer = start->lpNext;
+    if(Head && Head == Current)
+    {
+      // mark current buffer as done and advance
+      Current->dwFlags = (Current->dwFlags & ~WHDR_INQUEUE) | WHDR_DONE;
+      callbackMessage(WOM_DONE,(DWORD) Current,0);
 
-    // dequeue, unlink
-    buffer->dwFlags = (buffer->dwFlags & ~WHDR_INQUEUE) | WHDR_DONE;
-    start->lpNext = buffer->lpNext;
-
-    if(buffer == Tail)
-      Tail = start;
-
-    // give callback message
-    callbackMessage(WOM_DONE,(DWORD) buffer,0);
+      Current = Current->lpNext;
+      Head = Current;
+      if(!Head)
+        Tail = 0;
+    }
+    else
+      printLog("sound: inconsistent state in waveOut (this is a kkapture bug)\n");
   }
 
   void advanceBuffer()
   {
-    WAVEHDR *buffer = Current->lpNext;
-
     // loops need seperate processing
-    if(InLoop && (buffer->dwFlags & WHDR_ENDLOOP))
+    if(InLoop && (Current->dwFlags & WHDR_ENDLOOP))
     {
-      // find beginning of loop
-      while(!(Current->lpNext->dwFlags & WHDR_BEGINLOOP))
-        Current = Current->lpNext;
-
-      // decrement loop count. if it's not zero yet, we're done
-      if(--Current->lpNext->dwLoops)
-        return;
-      else
-      {
-        InLoop = FALSE;
-        return;
-      }
+      Current = Head;
+      if(!--Current->dwLoops)
+        InLoop = false;
+      return;
     }
 
-    // current buffer is done, untag it and advance to next buffer
+    // current buffer is done, mark it as done and advance
     if(!InLoop)
-      doneNextBuffer(Current);
+      doneBuffer();
     else
       Current = Current->lpNext;
 
-    // process flags to know which state we're in now
-    if((Current->lpNext->dwFlags & WHDR_BEGINLOOP) && Current->lpNext->dwLoops)
-      InLoop = TRUE;
+    processCurrentBuffer();
+  }
 
-    if(!InLoop && (Current->lpNext->dwFlags & WHDR_ENDLOOP))
-      Current->lpNext->dwFlags &= ~WHDR_ENDLOOP;
+  void processCurrentBuffer()
+  {
+    // process beginloop flag because it may cause a state change
+    if(Current && (Current->dwFlags & WHDR_BEGINLOOP) && Current->dwLoops)
+      InLoop = true;
   }
 
 public:
@@ -599,17 +717,11 @@ public:
     CallbackInstance = cbInstance;
     OpenFlags = fdwOpen;
 
-    Head = new WAVEHDR;
-    ZeroMemory(Head,sizeof(*Head));
-    Head->lpData = 0;
-    Head->dwBufferLength = 0;
-    Head->lpNext = Head;
-    Tail = Head;
-    Current = Head;
+    Head = Current = Tail = 0;
     CurrentBufferPos = 0;
 
-    Paused = FALSE;
-    InLoop = FALSE;
+    Paused = false;
+    InLoop = false;
     FirstFrame = -1;
     FirstWriteFrame = -1;
 
@@ -623,8 +735,6 @@ public:
 
   MMRESULT prepareHeader(WAVEHDR *hdr,UINT size)
   {
-    printLog("sound: waveOutPrepareHeader\n");
-
     if(!hdr || size != sizeof(WAVEHDR))
       return MMSYSERR_INVALPARAM;
 
@@ -646,8 +756,6 @@ public:
 
   MMRESULT write(WAVEHDR *hdr,UINT size)
   {
-    printLog("sound: waveOutWrite\n");
-
     if(!hdr || size != sizeof(WAVEHDR))
       return MMSYSERR_INVALPARAM;
 
@@ -666,20 +774,26 @@ public:
       currentWaveOut = this;
     }
 
-    Tail->lpNext = hdr;
-    Tail = hdr;
-
-    hdr->lpNext = Head;
+    hdr->lpNext = 0;
     hdr->dwFlags |= WHDR_INQUEUE;
 
-    callbackMessage(WOM_DONE,(DWORD) hdr,0);
+    if(Tail)
+    {
+      Tail->lpNext = hdr;
+      Tail = hdr;
+    }
+    else
+    {
+      Head = Current = Tail = hdr;
+      processCurrentBuffer();
+    }
 
     return MMSYSERR_NOERROR;
   }
 
   MMRESULT pause()
   {
-    Paused = TRUE;
+    Paused = true;
     return MMSYSERR_NOERROR;
   }
 
@@ -696,13 +810,12 @@ public:
 
   MMRESULT getPosition(MMTIME *mmt,UINT size)
   {
-    printLog("sound: waveOutGetPosition\n");
-
     if(!mmt || size != sizeof(MMTIME))
       return MMSYSERR_INVALPARAM;
 
     if(mmt->wType != TIME_BYTES && mmt->wType != TIME_SAMPLES && mmt->wType != TIME_MS)
     {
+      printLog("sound: unsupported timecode format in waveOutGetPosition\n");
       mmt->wType = TIME_SAMPLES;
       return MMSYSERR_INVALPARAM;
     }
@@ -749,7 +862,7 @@ public:
     DWORD sampleNew = DWORD(1.0 * frame * Format.nSamplesPerSec / frameRate);
     DWORD sampleCount = sampleNew - sampleOld;
 
-    if(Head->lpNext == Head || Paused) // write one frame of no audio
+    if(!Current || Paused) // write one frame of no audio
     {
       encodeNoAudio(sampleCount);
 
@@ -758,27 +871,24 @@ public:
     }
     else // we have audio playing, so consume buffers as long as possible
     {
-      while(sampleCount && Current != Head)
+      while(sampleCount && Current)
       {
-        WAVEHDR *buffer = Current->lpNext;
-        int useBytes = min(sampleCount*align,buffer->dwBufferLength - CurrentBufferPos);
+        int smps = min(sampleCount,(Current->dwBufferLength - CurrentBufferPos) / align);
+        if(smps)
+          encoder->WriteAudioFrame((PBYTE) Current->lpData + CurrentBufferPos,smps);
 
-        if(useBytes)
-          encoder->WriteAudioFrame((PBYTE) buffer->lpData + CurrentBufferPos,useBytes/align);
-
-        CurrentBufferPos += useBytes;
-        if(CurrentBufferPos >= buffer->dwBufferLength) // buffer done
+        sampleCount -= smps;
+        CurrentBufferPos += smps * align;
+        if(CurrentBufferPos >= Current->dwBufferLength) // buffer done
         {
           advanceBuffer();
           CurrentBufferPos = 0;
         }
       }
 
-      if(sampleCount && Current == Head) // ran out of audio data
+      if(sampleCount && !Current) // ran out of audio data
         encodeNoAudio(sampleCount);
     }
-
-    printLog("sound: frame finished\n");
   }
 };
 
@@ -806,11 +916,7 @@ MMRESULT __stdcall Mine_waveOutOpen(LPHWAVEOUT phwo,UINT uDeviceID,LPCWAVEFORMAT
   else
   {
     if(fdwOpen & WAVE_FORMAT_QUERY)
-    {
-      printLog("sound: query %d hz, %d bits, %d channels\n",
-        pwfx->nSamplesPerSec,pwfx->wBitsPerSample,pwfx->nChannels);
       return MMSYSERR_NOERROR;
-    }
     else
       return MMSYSERR_INVALPARAM;
   }
@@ -820,8 +926,6 @@ MMRESULT __stdcall Mine_waveOutClose(HWAVEOUT hwo)
 {
   WaveOutImpl *impl = (WaveOutImpl *) hwo;
   delete impl;
-
-  printLog("sound: waveOutClose\n");
 
   return MMSYSERR_NOERROR;
 }

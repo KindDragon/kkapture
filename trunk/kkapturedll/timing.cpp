@@ -4,9 +4,12 @@
 #include "stdafx.h"
 #include <malloc.h>
 
+#pragma comment(lib, "winmm.lib")
+
 // events
 static HANDLE nextFrameEvent = 0;
 static HANDLE resyncEvent = 0;
+static LONGLONG perfFrequency = 0;
 static volatile LONG resyncCounter = 0;
 static volatile LONG waitCounter = 0;
 
@@ -23,13 +26,19 @@ DETOUR_TRAMPOLINE(void __stdcall Real_GetSystemTimeAsFileTime(FILETIME *time), G
 
 BOOL __stdcall Mine_QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency)
 {
-  lpFrequency->QuadPart = 1000000;
+  lpFrequency->QuadPart = perfFrequency;
   return TRUE;
 }
 
 BOOL __stdcall Mine_QueryPerformanceCounter(LARGE_INTEGER *lpCounter)
 {
-  lpCounter->QuadPart = LONGLONG(getFrameTiming() * 1000000.0 / frameRate);
+  int frame = getFrameTiming();
+  static LARGE_INTEGER firstTime = { 0 };
+
+  if(!frame)
+    Real_QueryPerformanceCounter(&firstTime);
+
+  lpCounter->QuadPart = firstTime.QuadPart + LONGLONG(frame * 1.0 * perfFrequency / frameRate);
   return TRUE;
 }
 
@@ -42,7 +51,7 @@ DWORD __stdcall Mine_GetTickCount()
   if(!frame)
     firstTime = Real_GetTickCount();
 
-  return DWORD(firstTime + frame * 1000.0 / frameRate);
+  return firstTime + MulDiv(frame,1000*100,frameRateScaled);
 }
 
 DWORD __stdcall Mine_timeGetTime()
@@ -53,7 +62,7 @@ DWORD __stdcall Mine_timeGetTime()
   if(!frame)
     firstTime = Real_timeGetTime();
 
-  return DWORD(firstTime + frame * 1000.0 / frameRate);
+  return firstTime + MulDiv(frame,1000*100,frameRateScaled);
 }
 
 MMRESULT __stdcall Mine_timeGetSystemTime(MMTIME *pmmt,UINT cbmmt)
@@ -156,6 +165,10 @@ void initTiming()
   nextFrameEvent = CreateEvent(0,TRUE,FALSE,0);
   resyncEvent = CreateEvent(0,TRUE,TRUE,0);
 
+  LARGE_INTEGER freq;
+  QueryPerformanceFrequency(&freq);
+  perfFrequency = freq.QuadPart;
+
   DetourFunctionWithTrampoline((PBYTE) Real_QueryPerformanceFrequency, (PBYTE) Mine_QueryPerformanceFrequency);
   DetourFunctionWithTrampoline((PBYTE) Real_QueryPerformanceCounter, (PBYTE) Mine_QueryPerformanceCounter);
   DetourFunctionWithTrampoline((PBYTE) Real_GetTickCount, (PBYTE) Mine_GetTickCount);
@@ -187,11 +200,11 @@ void nextFrameTiming()
   ResetEvent(resyncEvent);
   SetEvent(nextFrameEvent);
   while(waitCounter)
-    Real_Sleep(10);
+    Real_Sleep(5);
   ResetEvent(nextFrameEvent);
   SetEvent(resyncEvent);
   
-  Real_Sleep(10);
+  Real_Sleep(5);
 
   currentFrame++;
 }

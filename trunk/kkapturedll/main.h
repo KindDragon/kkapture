@@ -9,15 +9,26 @@ class VideoEncoder;
 // global variables
 extern VideoEncoder *encoder;
 extern float frameRate;
+extern int frameRateScaled;
 
 // parameter block submitted by main app
-static const int PARAMVERSION = 1;
+static const int PARAMVERSION = 2;
+
+enum EncoderType
+{
+  DummyEncoder,
+  BMPEncoder,
+  AVIEncoder
+};
 
 struct ParameterBlock
 {
   unsigned VersionTag;
-  TCHAR AviName[_MAX_PATH];
-  float FrameRate;
+  TCHAR FileName[_MAX_PATH];
+  int FrameRate;
+  EncoderType Encoder;
+  DWORD VideoCodec;
+  DWORD VideoQuality;
 };
 
 #endif

@@ -7,8 +7,38 @@
 #include "avi_videoencoder.h"
 #include <stdio.h>
 
+#include "video.h"
+
 VideoEncoder *encoder = 0;
-float frameRate;
+float frameRate = 10;
+int frameRateScaled = 1000;
+bool initialized = false;
+
+void done()
+{
+  if(initialized)
+  {
+    printLog("main: shutting down...\n");
+
+    doneTiming();
+    doneSound();
+    doneVideo();
+    
+    delete encoder;
+    encoder = 0;
+
+    closeLog();
+    initialized = false;
+  }
+}
+
+DETOUR_TRAMPOLINE(void __stdcall Real_ExitProcess(UINT uExitCode), ExitProcess);
+
+void __stdcall Mine_ExitProcess(UINT uExitCode)
+{
+  done();
+  Real_ExitProcess(uExitCode);
+}
 
 void init()
 {
@@ -30,8 +60,14 @@ void init()
       // correct version
       if(block->VersionTag == PARAMVERSION)
       {
-        frameRate = block->FrameRate;
-        encoder = new AVIVideoEncoder(block->AviName,frameRate);
+        frameRateScaled = block->FrameRate;
+        if(block->Encoder == AVIEncoder)
+          encoder = new AVIVideoEncoder(block->FileName,frameRateScaled/100.0f,block->VideoCodec,block->VideoQuality);
+        else if(block->Encoder == BMPEncoder)
+          encoder = new BMPVideoEncoder(block->FileName);
+        else
+          encoder = new DummyVideoEncoder;
+
         error = false;
       }
 
@@ -45,28 +81,22 @@ void init()
   {
     printLog("main: couldn't access parameter block or wrong version");
 
-    frameRate = 10.0f;
+    frameRateScaled = 1000;
     encoder = new DummyVideoEncoder;
   }
-}
 
-void done()
-{
-  printLog("main: shutting down...\n");
+  // install our hook so we get notified of process exit (hopefully)
+  DetourFunctionWithTrampoline((PBYTE) Real_ExitProcess, (PBYTE) Mine_ExitProcess);
 
-  doneTiming();
-  doneSound();
-  doneVideo();
-  
-  delete encoder;
-  encoder = 0;
-
-  closeLog();
+  frameRate = frameRateScaled / 100.0;
+  initialized = true;
 }
 
 BOOL APIENTRY DllMain(HINSTANCE hModule, DWORD dwReason, PVOID lpReserved)
 {
-	switch (dwReason)
+  if(dwReason == DLL_PROCESS_ATTACH)
+    init();
+	/*switch (dwReason)
   {
   case DLL_PROCESS_ATTACH:
     init();
@@ -75,6 +105,6 @@ BOOL APIENTRY DllMain(HINSTANCE hModule, DWORD dwReason, PVOID lpReserved)
   case DLL_PROCESS_DETACH:
     done();
     return TRUE;
-	}
+	}*/
 	return TRUE;
 }

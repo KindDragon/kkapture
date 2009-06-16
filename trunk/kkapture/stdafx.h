@@ -4,4 +4,5 @@
 #pragma once
 
 #include <windows.h>
+#include <vfw.h>
 #include "detours.h"

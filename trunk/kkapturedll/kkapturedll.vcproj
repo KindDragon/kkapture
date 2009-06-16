@@ -4,7 +4,6 @@
 	Version="7.10"
 	Name="kkapturedll"
 	ProjectGUID="{8212119F-DBE1-4DA5-80A9-67FDE9A4CBD3}"
-	RootNamespace="kkapturedll"
 	Keyword="Win32Proj">
 	<Platforms>
 		<Platform
@@ -31,11 +30,12 @@
 				DebugInformationFormat="4"/>
 			<Tool
 				Name="VCCustomBuildTool"
-				CommandLine="copy $(TargetPath) $(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)"
+				CommandLine="copy $(TargetPath) $(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)
+"
 				Outputs="$(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)"/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="detours.lib opengl32.lib vfw32.lib winmm.lib dsound.lib d3d9.lib dxguid.lib"
+				AdditionalDependencies="detours.lib"
 				OutputFile="$(OutDir)/kkapturedll.dll"
 				LinkIncremental="2"
 				GenerateDebugInformation="TRUE"
@@ -82,11 +82,12 @@
 				DebugInformationFormat="3"/>
 			<Tool
 				Name="VCCustomBuildTool"
-				CommandLine="copy $(TargetPath) $(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)"
+				CommandLine="copy $(TargetPath) $(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)
+"
 				Outputs="$(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)"/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="detours.lib opengl32.lib vfw32.lib winmm.lib dsound.lib d3d9.lib dxguid.lib"
+				AdditionalDependencies="detours.lib"
 				OutputFile="$(OutDir)/kkapturedll.dll"
 				LinkIncremental="1"
 				GenerateDebugInformation="TRUE"
@@ -183,6 +184,21 @@
 			</File>
 			<File
 				RelativePath=".\video.h">
+			</File>
+			<File
+				RelativePath="video_direct3d8.cpp">
+			</File>
+			<File
+				RelativePath="video_direct3d9.cpp">
+			</File>
+			<File
+				RelativePath="video_directdraw.cpp">
+			</File>
+			<File
+				RelativePath="video_opengl.cpp">
+			</File>
+			<File
+				RelativePath="videocapturetimer.h">
 			</File>
 			<File
 				RelativePath=".\videoencoder.cpp">
