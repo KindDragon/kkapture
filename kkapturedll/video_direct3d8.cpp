@@ -62,6 +62,19 @@ static void fixPresentParameters(D3DPRESENT_PARAMETERS *pp)
   pp->FullScreen_PresentationInterval = 0;
 }
 
+static void getBackBufferSize(D3DPRESENT_PARAMETERS *pp,HWND hFocusWindow,int &width,int &height)
+{
+  HWND hWnd = pp->hDeviceWindow;
+  if(!hWnd)
+    hWnd = hFocusWindow;
+
+  RECT rc;
+  GetClientRect(hWnd,&rc);
+
+  width = pp->BackBufferWidth ? pp->BackBufferWidth : rc.right - rc.left;
+  height = pp->BackBufferHeight ? pp->BackBufferHeight : rc.bottom - rc.top;
+}
+
 static bool captureD3DFrame8(IDirect3DDevice8 *dev)
 {
   if(!captureSurf)
@@ -69,6 +82,8 @@ static bool captureD3DFrame8(IDirect3DDevice8 *dev)
 
   IDirect3DSurface8 *back = 0;
   bool error = true;
+
+  VideoCaptureDataLock lock;
 
   dev->GetBackBuffer(0,D3DBACKBUFFER_TYPE_MONO,&back);
   if(back)
@@ -147,10 +162,16 @@ static HRESULT __stdcall Mine_D3DDevice8_Reset(IDirect3DDevice8 *dev,D3DPRESENT_
   if(SUCCEEDED(hr))
   {
     printLog("video/d3d8: Reset successful.\n");
+
+    D3DDEVICE_CREATION_PARAMETERS param;
+    dev->GetCreationParameters(&param);
+
+    int width,height;
+    getBackBufferSize(pp,param.hFocusWindow,width,height);
     
-    setCaptureResolution(pp->BackBufferWidth,pp->BackBufferHeight);
+    setCaptureResolution(width,height);
     if(FAILED(dev->CreateImageSurface(captureWidth,captureHeight,pp->BackBufferFormat,&captureSurf)))
-      printLog("video/d3d8: couldn't create capture surface.\n");
+      printLog("video/d3d8: couldn't create capture surface (%d,%d,%d).\n",captureWidth,captureHeight,pp->BackBufferFormat);
 
     deviceRefCount -= 512;
     videoStartNextPart();
@@ -194,9 +215,13 @@ static HRESULT __stdcall Mine_D3D8_CreateDevice(IDirect3D8 *d3d,UINT a0,UINT a1,
     else
       firstCreate = false;
 
-    setCaptureResolution(a4->BackBufferWidth,a4->BackBufferHeight);
+    int width,height;
+    getBackBufferSize(a4,(HWND) a2,width,height);
+
+    setCaptureResolution(width,height);
     if(FAILED(dev->CreateImageSurface(captureWidth,captureHeight,a4->BackBufferFormat,&captureSurf)))
-      printLog("video/d3d8: couldn't create capture surface.\n");
+      printLog("video/d3d8: couldn't create capture surface (%d,%d,%d).\n",captureWidth,captureHeight,a4->BackBufferFormat);
+      //printLog("video/d3d8: couldn't create capture surface.\n");
 
     if(!Real_D3DDevice8_AddRef)
       Real_D3DDevice8_AddRef = (PD3DDevice8_AddRef) DetourCOM(dev,1,(PBYTE) Mine_D3DDevice8_AddRef);
@@ -211,6 +236,7 @@ static HRESULT __stdcall Mine_D3D8_CreateDevice(IDirect3D8 *d3d,UINT a0,UINT a1,
       Real_D3DDevice8_Present = (PD3DDevice8_Present) DetourCOM(dev,15,(PBYTE) Mine_D3DDevice8_Present);
 
     deviceRefCount = 1;
+    graphicsInitTiming();
   }
 
   return hr;

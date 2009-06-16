@@ -22,7 +22,9 @@
 
 #include "stdafx.h"
 #include "videocapturetimer.h"
+#include "video.h"
 #include <malloc.h>
+#include <process.h>
 
 #pragma comment(lib, "winmm.lib")
 
@@ -30,6 +32,11 @@
 static HANDLE nextFrameEvent = 0;
 static HANDLE resyncEvent = 0;
 static HANDLE noOneWaiting = 0;
+
+static HANDLE stuckTimer = 0;
+static HANDLE stuckThread = 0;
+static HANDLE endStuckEvent = 0;
+
 static LONGLONG perfFrequency = 0;
 static volatile LONG resyncCounter = 0;
 static volatile LONG waitCounter = 0;
@@ -357,6 +364,21 @@ DWORD __stdcall Mine_MsgWaitForMultipleObjects(DWORD nCount,CONST HANDLE *lpHand
 static int currentFrame = 0;
 static int realStartTime = 0;
 
+static void __cdecl stuckThreadProc(void *arg)
+{
+  HANDLE handles[2];
+
+  handles[0] = endStuckEvent;
+  handles[1] = stuckTimer;
+
+  while(Real_WaitForMultipleObjects(2,handles,FALSE,INFINITE) != WAIT_OBJECT_0)
+  {
+    printLog("timing: frame timed out, advancing time manually...\n");
+    skipFrame();
+    //nextFrame();
+  }
+}
+
 void initTiming()
 {
   timeBeginPeriod(1);
@@ -364,6 +386,8 @@ void initTiming()
   nextFrameEvent = CreateEvent(0,TRUE,FALSE,0);
   resyncEvent = CreateEvent(0,TRUE,TRUE,0);
   noOneWaiting = CreateEvent(0,TRUE,FALSE,0);
+  stuckTimer = CreateWaitableTimer(0,TRUE,0);
+  endStuckEvent = CreateEvent(0,TRUE,FALSE,0);
 
   memset(EventTimer,0,sizeof(EventTimer));
   InitializeCriticalSection(&TimerAllocLock);
@@ -385,10 +409,18 @@ void initTiming()
   DetourFunctionWithTrampoline((PBYTE) Real_timeSetEvent, (PBYTE) Mine_timeSetEvent);
   DetourFunctionWithTrampoline((PBYTE) Real_timeKillEvent, (PBYTE) Mine_timeKillEvent);
   DetourFunctionWithTrampoline((PBYTE) Real_SetTimer, (PBYTE) Mine_SetTimer);
+
+  stuckThread = (HANDLE) _beginthread(stuckThreadProc,0,0);
 }
 
 void doneTiming()
 {
+  // terminate "stuck" thread
+  SetEvent(endStuckEvent);
+  Real_WaitForSingleObject(stuckThread,500);
+  CloseHandle(stuckThread);
+  CloseHandle(stuckTimer);
+
   // make sure all currently active waits are finished
   ResetEvent(resyncEvent);
   SetEvent(nextFrameEvent);
@@ -418,6 +450,7 @@ void doneTiming()
   CloseHandle(nextFrameEvent);
   CloseHandle(resyncEvent);
   CloseHandle(noOneWaiting);
+  CloseHandle(endStuckEvent);
 
   int runTime = Real_timeGetTime() - realStartTime;
   timeEndPeriod(1);
@@ -426,6 +459,16 @@ void doneTiming()
   {
     int rate = MulDiv(currentFrame,100*1000,runTime);
     printLog("timing: %d.%02d frames per second on average\n",rate/100,rate%100);
+  }
+}
+
+void graphicsInitTiming()
+{
+  if(params.EnableAutoSkip)
+  {
+    LARGE_INTEGER due;
+    due.QuadPart = -10*1000*__int64(params.FirstFrameTimeout);
+    SetWaitableTimer(stuckTimer,&due,0,0,0,FALSE);
   }
 }
 
@@ -461,6 +504,13 @@ void nextFrameTiming()
 
   if(!currentFrame)
     realStartTime = Real_timeGetTime();
+
+  if(params.EnableAutoSkip)
+  {
+    LARGE_INTEGER due;
+    due.QuadPart = -10*1000*__int64(params.FrameTimeout);
+    SetWaitableTimer(stuckTimer,&due,0,0,0,FALSE);
+  }
 
   currentFrame++;
 }

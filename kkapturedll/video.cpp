@@ -28,8 +28,22 @@
 #include "avi_videoencoder_vfw.h"
 #include "avi_videoencoder_dshow.h"
 
+static CRITICAL_SECTION captureDataLock;
+static bool gotDataLock = false;
 static int partCounter;
 static bool seenFrames;
+
+VideoCaptureDataLock::VideoCaptureDataLock()
+{
+  if(gotDataLock)
+    EnterCriticalSection(&captureDataLock);
+}
+
+VideoCaptureDataLock::~VideoCaptureDataLock()
+{
+  if(gotDataLock)
+    LeaveCriticalSection(&captureDataLock);
+}
 
 // video encoder handling
 VideoEncoder *createVideoEncoder(const char *filename)
@@ -106,6 +120,8 @@ unsigned char *captureData = 0;
 
 void destroyCaptureBuffer()
 {
+  VideoCaptureDataLock lock;
+
   if(captureData)
   {
     captureWidth = 0;
@@ -119,6 +135,8 @@ void destroyCaptureBuffer()
 void createCaptureBuffer(int width,int height)
 {
   destroyCaptureBuffer();
+
+  VideoCaptureDataLock lock;
 
   captureWidth = width;
   captureHeight = height;
@@ -166,6 +184,20 @@ void nextFrame()
   seenFrames = true;
   nextFrameTiming();
   nextFrameSound();
+}
+
+// skip this frame (same as nextFrame(), but duplicating old frame data)
+void skipFrame()
+{
+  {
+    VideoCaptureDataLock lock;
+
+    // write the old frame again
+    if(encoder && params.CaptureVideo)
+      encoder->WriteFrame(captureData);
+  }
+
+  nextFrame();
 }
 
 static void blit32to24loop(unsigned char *dest,unsigned char *src,int count)
@@ -268,6 +300,9 @@ void blitAndFlipBGRAToCaptureData(unsigned char *source,unsigned pitch)
 // public interface
 void initVideo()
 {
+  InitializeCriticalSection(&captureDataLock);
+  gotDataLock = true;
+
   partCounter = 1;
   seenFrames = false;
 
@@ -280,4 +315,7 @@ void initVideo()
 void doneVideo()
 {
   destroyCaptureBuffer();
+
+  DeleteCriticalSection(&captureDataLock);
+  gotDataLock = false;
 }

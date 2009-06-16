@@ -25,6 +25,7 @@ void initTiming();
 void doneTiming();
 
 // update timing stuff
+void graphicsInitTiming();
 void resetTiming();
 void nextFrameTiming();
 

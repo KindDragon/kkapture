@@ -123,6 +123,8 @@ static bool captureD3DFrame9(IDirect3DDevice9 *dev)
   IDirect3DSurface9 *back = 0, *captureSrc;
   bool error = true;
 
+  VideoCaptureDataLock lock;
+
   dev->GetBackBuffer(0,0,D3DBACKBUFFER_TYPE_MONO,&back);
   if(back)
   {
@@ -270,6 +272,7 @@ static HRESULT __stdcall Mine_D3D9_CreateDevice(IDirect3D9 *d3d,UINT a0,UINT a1,
     if(!Real_D3DDevice9_Present)
       Real_D3DDevice9_Present = (PD3DDevice9_Present) DetourCOM(dev,17,(PBYTE) Mine_D3DDevice9_Present);
 
+    graphicsInitTiming();
   }
 
   return hr;

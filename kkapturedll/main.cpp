@@ -23,6 +23,7 @@
 #include "stdafx.h"
 #include "tchar.h"
 #include <stdio.h>
+#include <process.h>
 
 #include "video.h"
 #include "videoencoder.h"
@@ -34,7 +35,10 @@ ParameterBlock params;
 
 static CRITICAL_SECTION shuttingDown;
 static bool initialized = false;
+static HMODULE hModule = 0;
 static HHOOK hKeyHook = 0;
+static HANDLE hHookThread = 0;
+static DWORD HookThreadId = 0;
 
 // ---- forwards
 
@@ -51,11 +55,12 @@ void __stdcall Mine_ExitProcess(UINT uExitCode)
   Real_ExitProcess(uExitCode);
 }
 
-LRESULT CALLBACK KeyboardHook(int code,WPARAM wParam,LPARAM lParam)
+LRESULT CALLBACK LLKeyboardHook(int code,WPARAM wParam,LPARAM lParam)
 {
   bool wannaExit = false;
+  KBDLLHOOKSTRUCT *hook = (KBDLLHOOKSTRUCT *) lParam;
 
-  if(code == HC_ACTION && wParam == VK_CANCEL) // ctrl+break
+  if(code == HC_ACTION && hook->vkCode == VK_CANCEL) // ctrl+break
     wannaExit = true;
 
   LRESULT result = CallNextHookEx(hKeyHook,code,wParam,lParam);
@@ -66,6 +71,33 @@ LRESULT CALLBACK KeyboardHook(int code,WPARAM wParam,LPARAM lParam)
   }
 
   return result;
+}
+
+static void __cdecl HookThreadProc(void *arg)
+{
+  HookThreadId = GetCurrentThreadId();
+
+  // install the hook
+  hKeyHook = SetWindowsHookEx(WH_KEYBOARD_LL,LLKeyboardHook,hModule,0);
+  if(!hKeyHook)
+    printLog("main: couldn't install keyboard hook\n");
+
+  // message loop
+  MSG msg;
+  while(GetMessage(&msg,0,0,0))
+  {
+    TranslateMessage(&msg);
+    DispatchMessage(&msg);
+  }
+
+  printLog("main: hook thread exiting\n");
+
+  // remove the hook
+  if(hKeyHook)
+  {
+    UnhookWindowsHookEx(hKeyHook);
+    hKeyHook = 0;
+  }
 }
 
 // ---- public interface
@@ -81,11 +113,8 @@ static void done()
   {
     printLog("main: shutting down...\n");
 
-    if(hKeyHook)
-    {
-      UnhookWindowsHookEx(hKeyHook);
-      hKeyHook = 0;
-    }
+    // shutdown hook thread
+    PostThreadMessage(HookThreadId,WM_QUIT,0,0);
 
     VideoEncoder *realEncoder = encoder;
     encoder = 0;
@@ -158,7 +187,7 @@ static void init()
 
   // install our hook so we get notified of process exit (hopefully)
   DetourFunctionWithTrampoline((PBYTE) Real_ExitProcess, (PBYTE) Mine_ExitProcess);
-  hKeyHook = SetWindowsHookEx(WH_KEYBOARD,KeyboardHook,GetModuleHandle(0),0);
+  hHookThread = (HANDLE) _beginthread(HookThreadProc,0,0);
 
   frameRate = frameRateScaled / 100.0f;
   initialized = true;
@@ -169,7 +198,10 @@ static void init()
 BOOL APIENTRY DllMain(HINSTANCE hModule, DWORD dwReason, PVOID lpReserved)
 {
   if(dwReason == DLL_PROCESS_ATTACH)
+  {
+    ::hModule = hModule;
     init();
+  }
 
   return TRUE;
 }

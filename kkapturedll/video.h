@@ -25,6 +25,13 @@
 
 class VideoEncoder;
 
+class VideoCaptureDataLock
+{
+public:
+  VideoCaptureDataLock();
+  ~VideoCaptureDataLock();
+};
+
 // encoder
 VideoEncoder *createVideoEncoder(const char *filename);
 void videoStartNextPart(bool autoSize=true);
@@ -44,6 +51,7 @@ void destroyCaptureBuffer();
 void createCaptureBuffer(int width,int height);
 void setCaptureResolution(int width,int height);
 void nextFrame();
+void skipFrame();
 
 // capture helpers
 void blitAndFlipBGRAToCaptureData(unsigned char *source,unsigned pitch);

@@ -2,6 +2,7 @@ checked with new timing (alphabetical order):
 - 00101010/FAN
 - 195/95/plastic
 - a deepness in the sky/mfx (synchronization slightly off)
+- abstinens/keyboarders (use auto skip)
 - aether/mfx
 - animal attraction/asd
 - assembly 04 invitation/moppi productions
@@ -12,9 +13,12 @@ checked with new timing (alphabetical order):
 - dead ringer/fairlight
 - don't stop/portal process
 - final audition/plastic
+- first offence/parapete
 - fr-08: the product/farbrausch (use "skip silence at start")
 - fr-025: the popular demo/farbrausch
 - fr-038: theta/farbrausch
+- fr-041: debris/farbrausch
+- frameskool/equinox (use auto skip)
 - fresnel 2/kolor
 - heaven 7/exceed
 - insert coins/traction
@@ -22,12 +26,16 @@ checked with new timing (alphabetical order):
 - mega hilter expansion pack/boozoholics
 - metamorf/satori
 - monorail/bypass+black maiden
+- mupe/playpsyco (use auto skip)
+- nature v2.0/threepixels
 - ninja in a box/tpolm
+- noumenon/andromeda (use auto skip)
 - blockbuster/outracks
 - panjabmoore meets 007 again/calodox
 - perfect love/lkcc+bauknecht
 - planet risk/asd
 - protozoa/kewlers
+- r08028/threepixels+stravaganza
 - raw confessions/cocoon
 - resonance/portal process
 - square/pulse (win32 version)

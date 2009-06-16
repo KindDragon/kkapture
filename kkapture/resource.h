@@ -17,6 +17,9 @@
 #define IDC_SKIPSILENCE                 1018
 #define IDC_SLEEPLAST                   1019
 #define IDC_NEWINTERCEPT                1020
+#define IDC_AUTOSKIP                    1021
+#define IDC_FIRSTFRAMETIMEOUT           1022
+#define IDC_OTHERFRAMETIMEOUT           1023
 
 // Next default values for new objects
 // 

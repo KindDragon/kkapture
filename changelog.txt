@@ -1,3 +1,24 @@
+version 0.06:
+* magic exit key (ctrl+break) improved: now uses lowlevel hook, should always work now.
+* d3d8 capture fixes: r08028, nature v2.0 work now.
+* vfw .avi writer can now also handle format changes while the demo is running
+* should now work with demos that use FMODEx: at least first offence works fine now.
+* now automatically advances time if frames take too long.
+  fixes a LOT of demos that do busy waits somewhere, including:
+  - frameskool by equinox
+  - mupe by playpsyco
+  - abstinens by keyboards
+  - noumenon by andromeda
+  and probably a lot of other demos too.
+  
+  how to use: check "Enable automatic frameskip on timeout".
+  the two timeout values define how much time the application has to render
+  the first/subsequent frames; if it takes longer, kkapture will skip a
+  frame and write a log message. lower timeouts mean faster kkapturing for
+  apps that explicitly perform waits every frame, but the lower you set those
+  values, the higher the risk that kkapture will drop a frame just because
+  rendering took a tad longer than expected. so be careful!
+
 version 0.05b:
 * IDirectSoundBuffer::SetFrequency handling fixed (affects onwards, 2^5 by traction)
 * debug force-windowed code for d3d9 removed :)

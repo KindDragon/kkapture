@@ -111,6 +111,9 @@ static void LoadSettingsFromRegistry()
   Params.VideoCodec = RegQueryDWord(hk,_T("AVIVideoCodec"),mmioFOURCC('D','I','B',' '));
   Params.VideoQuality = RegQueryDWord(hk,_T("AVIVideoQuality"),ICQUALITY_DEFAULT);
   Params.NewIntercept = RegQueryDWord(hk,_T("NewIntercept"),0);
+  Params.EnableAutoSkip = RegQueryDWord(hk,_T("EnableAutoSkip"),0);
+  Params.FirstFrameTimeout = RegQueryDWord(hk,_T("FirstFrameTimeout"),1000);
+  Params.FrameTimeout = RegQueryDWord(hk,_T("FrameTimeout"),500);
 
   if(hk)
     RegCloseKey(hk);
@@ -127,6 +130,9 @@ static void SaveSettingsToRegistry()
     RegSetDWord(hk,_T("AVIVideoCodec"),Params.VideoCodec);
     RegSetDWord(hk,_T("AVIVideoQuality"),Params.VideoQuality);
     RegSetDWord(hk,_T("NewIntercept"),Params.NewIntercept);
+    RegSetDWord(hk,_T("EnableAutoSkip"),Params.EnableAutoSkip);
+    RegSetDWord(hk,_T("FirstFrameTimeout"),Params.FirstFrameTimeout);
+    RegSetDWord(hk,_T("FrameTimeout"),Params.FrameTimeout);
     RegCloseKey(hk);
   }
 }
@@ -152,6 +158,12 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
       _stprintf(buffer,"%d.%02d",Params.FrameRate/100,Params.FrameRate%100);
       SetDlgItemText(hWndDlg,IDC_FRAMERATE,buffer);
 
+      _stprintf(buffer,"%d.%02d",Params.FirstFrameTimeout/1000,(Params.FirstFrameTimeout/10)%100);
+      SetDlgItemText(hWndDlg,IDC_FIRSTFRAMETIMEOUT,buffer);
+
+      _stprintf(buffer,"%d.%02d",Params.FrameTimeout/1000,(Params.FrameTimeout/10)%100);
+      SetDlgItemText(hWndDlg,IDC_OTHERFRAMETIMEOUT,buffer);
+
       SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_ADDSTRING,0,(LPARAM) ".BMP/.WAV writer");
       SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_ADDSTRING,0,(LPARAM) ".AVI (VfW, segmented)");
       SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_ADDSTRING,0,(LPARAM) ".AVI (DirectShow, OpenDML)");
@@ -167,6 +179,14 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
       }
       else
         CheckDlgButton(hWndDlg,IDC_NEWINTERCEPT,Params.NewIntercept ? BST_CHECKED : BST_UNCHECKED);
+
+      if(Params.EnableAutoSkip)
+        CheckDlgButton(hWndDlg,IDC_AUTOSKIP,BST_CHECKED);
+      else
+      {
+        EnableDlgItem(hWndDlg,IDC_FIRSTFRAMETIMEOUT,FALSE);
+        EnableDlgItem(hWndDlg,IDC_OTHERFRAMETIMEOUT,FALSE);
+      }
 
       HIC codec = ICOpen(ICTYPE_VIDEO,Params.VideoCodec,ICMODE_QUERY);
       SetVideoCodecInfo(hWndDlg,codec);
@@ -189,6 +209,8 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
     case IDOK:
       {
         TCHAR frameRateStr[64];
+        TCHAR firstFrameTimeout[64];
+        TCHAR otherFrameTimeout[64];
 
         Params.VersionTag = PARAMVERSION;
 
@@ -197,6 +219,10 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
         GetDlgItemText(hWndDlg,IDC_ARGUMENTS,Arguments,MAX_ARGS);
         GetDlgItemText(hWndDlg,IDC_TARGET,Params.FileName,_MAX_PATH);
         GetDlgItemText(hWndDlg,IDC_FRAMERATE,frameRateStr,sizeof(frameRateStr)/sizeof(*frameRateStr));
+        GetDlgItemText(hWndDlg,IDC_FIRSTFRAMETIMEOUT,firstFrameTimeout,sizeof(firstFrameTimeout)/sizeof(*firstFrameTimeout));
+        GetDlgItemText(hWndDlg,IDC_OTHERFRAMETIMEOUT,otherFrameTimeout,sizeof(otherFrameTimeout)/sizeof(*otherFrameTimeout));
+
+        BOOL autoSkip = IsDlgButtonChecked(hWndDlg,IDC_AUTOSKIP) == BST_CHECKED;
 
         // validate everything and fill out parameter block
         HANDLE hFile = CreateFile(ExeName,GENERIC_READ,0,0,OPEN_EXISTING,0,0);
@@ -209,12 +235,34 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
         else
           CloseHandle(hFile);
 
-        double frameRate = (float)atof(frameRateStr);
-        if(frameRate <= 0.0f || frameRate >= 1000.0f)
+        double frameRate = atof(frameRateStr);
+        if(frameRate <= 0.0 || frameRate >= 1000.0)
         {
           MessageBox(hWndDlg,_T("Please enter a valid frame rate."),
             _T(".kkapture"),MB_ICONERROR|MB_OK);
           return TRUE;
+        }
+
+        if(autoSkip)
+        {
+          double fft = atof(firstFrameTimeout);
+          if(fft <= 0.0 || fft >= 3600.0)
+          {
+            MessageBox(hWndDlg,_T("'Initial frame timeout' must be between 0 and 3600 seconds."),
+              _T(".kkapture"),MB_ICONERROR|MB_OK);
+            return TRUE;
+          }
+
+          double oft = atof(otherFrameTimeout);
+          if(oft <= 0.0 || oft >= 3600.0)
+          {
+            MessageBox(hWndDlg,_T("'Other frames timeout' must be between 0 and 3600 seconds."),
+              _T(".kkapture"),MB_ICONERROR|MB_OK);
+            return TRUE;
+          }
+
+          Params.FirstFrameTimeout = fft*1000;
+          Params.FrameTimeout = oft*1000;
         }
 
         Params.FrameRate = frameRate * 100;
@@ -226,6 +274,7 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
         Params.MakeSleepsLastOneFrame = IsDlgButtonChecked(hWndDlg,IDC_SLEEPLAST) == BST_CHECKED;
         Params.SleepTimeout = 2500; // yeah, this should be configurable
         Params.NewIntercept = IsDlgButtonChecked(hWndDlg,IDC_NEWINTERCEPT) == BST_CHECKED;
+        Params.EnableAutoSkip = autoSkip;
 
         // save settings for next time
         SaveSettingsToRegistry();
@@ -317,6 +366,14 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
           SetVideoCodecInfo(hWndDlg,cv.hic);
           ICCompressorFree(&cv);
         }
+      }
+      return TRUE;
+
+    case IDC_AUTOSKIP:
+      {
+        BOOL enable = IsDlgButtonChecked(hWndDlg,IDC_AUTOSKIP) == BST_CHECKED;
+        EnableDlgItem(hWndDlg,IDC_FIRSTFRAMETIMEOUT,enable);
+        EnableDlgItem(hWndDlg,IDC_OTHERFRAMETIMEOUT,enable);
       }
       return TRUE;
     }
