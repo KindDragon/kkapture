@@ -157,6 +157,7 @@ static MMRESULT __stdcall Mine_timeSetEvent(UINT uDelay,UINT uResolution,LPTIMEC
 
   if(i == MaxEventTimers) // no free slot found
   {
+    printLog("timing: OUT OF EVENT TIMER SLOTS.\n");
     LeaveCriticalSection(&TimerAllocLock);
     return 0;
   }
@@ -404,6 +405,8 @@ void doneTiming()
   DetourRemove((PBYTE) Real_timeSetEvent, (PBYTE) Mine_timeSetEvent);
   DetourRemove((PBYTE) Real_timeKillEvent, (PBYTE) Mine_timeKillEvent);
   DetourRemove((PBYTE) Real_SetTimer, (PBYTE) Mine_SetTimer);
+  EnterCriticalSection(&TimerAllocLock);
+  LeaveCriticalSection(&TimerAllocLock);
   DeleteCriticalSection(&TimerAllocLock);
 
   // we have to remove those, because code we call on deinitilization (especially directshow related)

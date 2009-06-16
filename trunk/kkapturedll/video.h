@@ -45,16 +45,10 @@ void createCaptureBuffer(int width,int height);
 void setCaptureResolution(int width,int height);
 void nextFrame();
 
-// fallback capturing+buffering
-void captureGDIFrame(HDC hDC);
-void captureGDIFullScreen();
-
+// capture helpers
 void blitAndFlipBGRAToCaptureData(unsigned char *source,unsigned pitch);
 
 extern int captureWidth, captureHeight;
 extern unsigned char *captureData;
-
-extern HDC hCaptureDC;
-extern HBITMAP hCaptureBitmap;
 
 #endif

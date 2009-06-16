@@ -36,6 +36,23 @@ class MyDirectSoundBuffer8;
 
 static MyDirectSoundBuffer8 *playBuffer = 0;
 
+class LockOwner
+{
+  CRITICAL_SECTION &section;
+
+public:
+  LockOwner(CRITICAL_SECTION &cs)
+    : section(cs)
+  {
+    EnterCriticalSection(&section);
+  }
+
+  ~LockOwner()
+  {
+    LeaveCriticalSection(&section);
+  }
+};
+
 class MyDirectSound3DListener8 : public IDirectSound3DListener8
 {
   int RefCount;
@@ -289,6 +306,7 @@ class MyDirectSoundBuffer8 : public IDirectSoundBuffer8
   DWORD Frequency;
   BOOL Playing,Looping;
   LONG Volume;
+  LONG Panning;
   CRITICAL_SECTION BufferLock;
   DWORD PlayCursor;
   BOOL SkipAllowed;
@@ -341,6 +359,7 @@ public:
     Playing = FALSE;
     Looping = FALSE;
     Volume = 0;
+    Panning = 0;
     PlayCursor = 0;
     SkipAllowed = FALSE;
     SamplesPlayed = 0;
@@ -351,6 +370,11 @@ public:
 
   ~MyDirectSoundBuffer8()
   {
+    // synchronize access to bufferlock before deleting the section
+    {
+      LockOwner sync(BufferLock);
+    }
+
     DeleteCriticalSection(&BufferLock);
     delete[] Buffer;
   }
@@ -413,7 +437,7 @@ public:
 
   virtual HRESULT __stdcall GetCurrentPosition(LPDWORD pdwCurrentPlayCursor,LPDWORD pdwCurrentWriteCursor)
   {
-    EnterCriticalSection(&BufferLock);
+    LockOwner lock(BufferLock);
 
     // skip some milliseconds of silence at start
     if(SkipAllowed)
@@ -449,14 +473,19 @@ public:
     }
     else // playing, so report current positions
     {
+      // the "track one" hack!
+      if(!Looping && ++GetPosThisFrame > 128)
+      {
+        Stop();
+        PlayCursor = Bytes;
+      }
+
       if(pdwCurrentPlayCursor)
         *pdwCurrentPlayCursor = PlayCursor;
 
       if(pdwCurrentWriteCursor)
         *pdwCurrentWriteCursor = WriteCursor();
     }
-
-    LeaveCriticalSection(&BufferLock);
 
     return S_OK;
   }
@@ -484,8 +513,10 @@ public:
 
   virtual HRESULT __stdcall GetPan(LPLONG plPan)
   {
-    printLog("sound: dsound getpan\n");
-    return E_NOTIMPL;
+    if(plPan)
+      *plPan = Panning;
+
+    return S_OK;
   }
 
   virtual HRESULT __stdcall GetFrequency(LPDWORD pdwFrequency)
@@ -515,7 +546,7 @@ public:
 
   virtual HRESULT __stdcall Lock(DWORD dwOffset,DWORD dwBytes,LPVOID *ppvAudioPtr1,LPDWORD pdwAudioBytes1,LPVOID *ppvAudioPtr2,LPDWORD pdwAudioBytes2,DWORD dwFlags)
   {
-    EnterCriticalSection(&BufferLock);
+    LockOwner lock(BufferLock);
 
     if(dwFlags & DSBLOCK_FROMWRITECURSOR)
       dwOffset = WriteCursor();
@@ -561,7 +592,7 @@ public:
     Playing = TRUE;
     Looping = (dwFlags & DSBPLAY_LOOPING) ? TRUE : FALSE;
 
-    if(!(Flags & DSBCAPS_PRIMARYBUFFER))
+    if(!(Flags & DSBCAPS_PRIMARYBUFFER) && Looping)
     {
       encoder->SetAudioFormat(&Format);
       playBuffer = this;
@@ -591,8 +622,8 @@ public:
 
   virtual HRESULT __stdcall SetPan(LONG lPan)
   {
-    printLog("sound: dsound setpan\n");
-    return E_NOTIMPL;
+    Panning = lPan;
+    return S_OK;
   }
 
   virtual HRESULT __stdcall SetFrequency(DWORD dwFrequency)
@@ -612,8 +643,6 @@ public:
 
   virtual HRESULT __stdcall Unlock(LPVOID pvAudioPtr1,DWORD dwAudioBytes1,LPVOID pvAudioPtr2,DWORD dwAudioBytes2)
   {
-    LeaveCriticalSection(&BufferLock);
-
     return S_OK;
   }
 
@@ -641,7 +670,7 @@ public:
   // ----
   void encodeLastFrameAudio()
   {
-    EnterCriticalSection(&BufferLock);
+    LockOwner lock(BufferLock);
 
     // calculate number of samples processed since last frame, then encode
     DWORD frameSize = NextFrameSize();
@@ -665,8 +694,6 @@ public:
     PlayCursor = end % Bytes;
     SamplesPlayed += frameSize;
     GetPosThisFrame = 0;
-
-    LeaveCriticalSection(&BufferLock);
   }
 };
 
@@ -1160,9 +1187,19 @@ MMRESULT __stdcall Mine_waveOutOpen(LPHWAVEOUT phwo,UINT uDeviceID,LPCWAVEFORMAT
 
 MMRESULT __stdcall Mine_waveOutClose(HWAVEOUT hwo)
 {
-  delete GetWaveOutImpl(hwo);
+  printLog("sound: waveOutClose %08x\n",hwo);
 
-  return MMSYSERR_NOERROR;
+  WaveOutImpl *impl = GetWaveOutImpl(hwo);
+  if(impl)
+  {
+    delete impl;
+    if(impl == waveOutLast)
+      waveOutLast = 0;
+
+    return MMSYSERR_NOERROR;
+  }
+  else
+    return MMSYSERR_INVALHANDLE;
 }
 
 MMRESULT __stdcall Mine_waveOutPrepareHeader(HWAVEOUT hwo,LPWAVEHDR pwh,UINT cbwh)

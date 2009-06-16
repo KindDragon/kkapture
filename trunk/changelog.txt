@@ -1,3 +1,12 @@
+version 0.05:
+* small bugfix in dshow video encoder (thanks malc)
+* "new startup instrumentation" button now actually does something :)
+* startup instrumentation code now less picky about executable files
+* startup instrumentation now works when first instr. is call/jmp (helps with several demos)
+* added dc/rendering context tracking for opengl (fixes problem with animal attraction)
+* synchronization policy changed in dsound code (fixes problems with mega hilter expansion pack, maybe some threading issues too?)
+* old fallback gdi capture code removed (not required anymore and it never worked properly anyway)
+
 version 0.04:
 * switched to visual c++ 2005 express edition
 * "new startup interception" that works on 64bit host machines (always on on 64bit, default off on 32bit)

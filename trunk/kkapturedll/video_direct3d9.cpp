@@ -69,6 +69,9 @@ static void fixPresentParameters(D3DPRESENT_PARAMETERS *pp)
 		pp->BackBufferFormat = D3DFMT_X8R8G8B8;
 
   pp->PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+  
+  pp->Windowed = TRUE;
+  pp->FullScreen_RefreshRateInHz = 0;
 }
 
 static void freeCaptureSurfaces()
@@ -226,7 +229,7 @@ static HRESULT __stdcall Mine_D3DDevice9_Present(IDirect3DDevice9 *dev,DWORD a0,
   if(params.CaptureVideo)
   {
     if(!captureD3DFrame9(dev))
-      captureGDIFullScreen();
+      printLog("video/d3d9: Frame capture failed! (frame %d)\n",getFrameTiming());
   }
 
   nextFrame();
