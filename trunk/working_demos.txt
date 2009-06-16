@@ -20,6 +20,7 @@ checked with new timing (alphabetical order):
 - fr-041: debris/farbrausch
 - frameskool/equinox (use auto skip)
 - fresnel 2/kolor
+- galiwm/ümlaüt design
 - heaven 7/exceed
 - insert coins/traction
 - liquid lust/fairlight
@@ -44,7 +45,7 @@ checked with new timing (alphabetical order):
 - sts-03: aeon flux/synesthetics
 - summer encounter/outracks
 - tokyo/xplsv+roterfleck
-- track one/fairlight
+- track one/fairlight (turn on "fairlight hack")
 - trocken/bauknecht
 - variform/kewlers
 - wonder/sunflower

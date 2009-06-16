@@ -474,7 +474,7 @@ public:
     else // playing, so report current positions
     {
       // the "track one" hack!
-      if(!Looping && ++GetPosThisFrame > 128)
+      if(params.FairlightHack && !Looping && ++GetPosThisFrame > 128)
       {
         Stop();
         PlayCursor = Bytes;
@@ -592,7 +592,7 @@ public:
     Playing = TRUE;
     Looping = (dwFlags & DSBPLAY_LOOPING) ? TRUE : FALSE;
 
-    if(!(Flags & DSBCAPS_PRIMARYBUFFER) && Looping)
+    if(!(Flags & DSBCAPS_PRIMARYBUFFER) && (!params.FairlightHack || Looping))
     {
       encoder->SetAudioFormat(&Format);
       playBuffer = this;

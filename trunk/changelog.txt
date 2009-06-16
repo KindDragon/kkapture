@@ -1,3 +1,9 @@
+version 0.06b:
+* now default to vfw video encoder on new installations.
+* "fairlight hack" switch now explicit due to request - turn it on for track one and possibly other flt demos, otherwise leave it off.
+  (was implicitly on in all versions from 0.05 upwards)
+* more new startup instrumentation fixes (yaay!)
+
 version 0.06:
 * magic exit key (ctrl+break) improved: now uses lowlevel hook, should always work now.
 * d3d8 capture fixes: r08028, nature v2.0 work now.

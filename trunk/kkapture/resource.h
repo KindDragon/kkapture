@@ -20,6 +20,7 @@
 #define IDC_AUTOSKIP                    1021
 #define IDC_FIRSTFRAMETIMEOUT           1022
 #define IDC_OTHERFRAMETIMEOUT           1023
+#define IDC_FAIRLIGHTHACK               1024
 
 // Next default values for new objects
 // 
