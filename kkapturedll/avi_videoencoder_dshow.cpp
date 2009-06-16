@@ -1,5 +1,5 @@
 /* kkapture: intrusive demo video capturing.
- * Copyright (c) 2005-2006 Fabian "ryg/farbrausch" Giesen.
+ * Copyright (c) 2005-2009 Fabian "ryg/farbrausch" Giesen.
  *
  * This program is free software; you can redistribute and/or modify it under
  * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
@@ -44,9 +44,6 @@
 // builds) available as strmbase_r.lib and strmbase_d.lib in the same
 // directory.
 
-// TODO:
-// - audio format conversion
-
 #pragma comment(lib,"vfw32.lib")
 
 #ifdef NDEBUG
@@ -80,12 +77,12 @@ class VideoSourcePin : public CSourceStream
   bool Terminating;
 
 public:
-  VideoSourcePin(HRESULT *hr,CSource *filter,float fps,int xRes,int yRes)
+  VideoSourcePin(HRESULT *hr,CSource *filter,int fpsNum,int fpsDenom,int xRes,int yRes)
     : CSourceStream(NAME("kkapture video source"),hr,filter,L"Out"),
     Filter(filter),XRes(xRes),YRes(yRes)
   {
     // time per frame is in units of 100 nanoseconds
-    TimePerFrame = REFERENCE_TIME(10.0*1000*1000 / fps);
+    TimePerFrame = ULongMulDiv(10*1000*1000,fpsDenom,fpsNum);
     Frames = 0;
     Terminating = false;
 
@@ -201,7 +198,7 @@ public:
     VIDEOINFOHEADER *vi = (VIDEOINFOHEADER *) m_mt.Format();
     sample->GetPointer(&dataPtr);
 
-    memcpy(dataPtr,sourceData,min(sample->GetSize(),vi->bmiHeader.biSizeImage));
+    memcpy(dataPtr,sourceData,min(sample->GetSize(),(int) vi->bmiHeader.biSizeImage));
 
     // set time and sync point
     REFERENCE_TIME start,end;
@@ -255,12 +252,12 @@ class VideoSourceFilter : public CSource
   VideoSourcePin *pin;
 
 public:
-  VideoSourceFilter(float fps,int xRes,int yRes)
+  VideoSourceFilter(int fpsNum,int fpsDenom,int xRes,int yRes)
     : CSource(NAME("kkapture video source"),0,CLSID_VideoSource)
   {
     HRESULT hr;
 
-    pin = new VideoSourcePin(&hr,this,fps,xRes,yRes);
+    pin = new VideoSourcePin(&hr,this,fpsNum,fpsDenom,xRes,yRes);
   }
 
   ~VideoSourceFilter()
@@ -471,13 +468,13 @@ public:
     }
   }
 
-  void FeedZeroFrames(int frames,float fps)
+  void FeedZeroFrames(int frames,int fpsNum,int fpsDenom)
   {
     unsigned char buffer[2048];
     memset(buffer,0,sizeof(buffer));
 
     WAVEFORMATEX *fmt = (WAVEFORMATEX *) m_mt.Format();
-    DWORD fillBytes = UMulDiv(frames*100,fmt->nAvgBytesPerSec,int(fps*100));
+    DWORD fillBytes = UMulDiv(frames,fmt->nAvgBytesPerSec * fpsDenom,fpsNum);
 
     while(fillBytes)
     {
@@ -517,9 +514,9 @@ public:
     pin->PushData(data,countBytes);
   }
 
-  void FeedZeroFrames(int frames,float fps)
+  void FeedZeroFrames(int frames,int fpsNum,int fpsDenom)
   {
-    pin->FeedZeroFrames(frames,fps);
+    pin->FeedZeroFrames(frames,fpsNum,fpsDenom);
   }
 
   void Terminate()
@@ -703,7 +700,7 @@ void AVIVideoEncoderDShow::StartEncode()
     HRESULT hr;
 
     // add the video source
-    d->video = new VideoSourceFilter(fps,xRes,yRes);
+    d->video = new VideoSourceFilter(fpsNum,fpsDenom,xRes,yRes);
     hr = d->graph->AddFilter(d->video,L"kkapture video source");
     if(FAILED(hr))
       printLog("avi_dshow: couldn't add filter\n");
@@ -784,15 +781,16 @@ void AVIVideoEncoderDShow::StartAudioEncode(const tWAVEFORMATEX *fmt)
   d->audioOk = d->resampler.Init(fmt,&out);
 
   if(d->audio && d->audioOk)
-    d->audio->FeedZeroFrames(frame,fps);
+    d->audio->FeedZeroFrames(frame,fpsNum,fpsDenom);
 }
 
-AVIVideoEncoderDShow::AVIVideoEncoderDShow(const char *name,float _fps,unsigned long codec,unsigned quality)
+AVIVideoEncoderDShow::AVIVideoEncoderDShow(const char *name,int _fpsNum,int _fpsDenom,unsigned long codec,unsigned quality)
 {
   xRes = yRes = 0;
   frame = 0;
   audioSample = 0;
-  fps = _fps;
+  fpsNum = _fpsNum;
+  fpsDenom = _fpsDenom;
 
   d = new Internal;
   d->formatSet = false;

@@ -1,5 +1,5 @@
 /* kkapture: intrusive demo video capturing.
- * Copyright (c) 2005-2006 Fabian "ryg/farbrausch" Giesen.
+ * Copyright (c) 2005-2009 Fabian "ryg/farbrausch" Giesen.
  *
  * This program is free software; you can redistribute and/or modify it under
  * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
@@ -74,8 +74,8 @@ void AVIVideoEncoderVFW::Init()
   // initialize video stream header
   ZeroMemory(&asi,sizeof(asi));
   asi.fccType               = streamtypeVIDEO;
-  asi.dwScale               = 10000;
-  asi.dwRate                = (DWORD) (10000*fps + 0.5f);
+  asi.dwScale               = fpsDenom;
+  asi.dwRate                = fpsNum;
   asi.dwSuggestedBufferSize = xRes * yRes * 3;
   SetRect(&asi.rcFrame,0,0,xRes,yRes);
   strcpy_s(asi.szName,"Video");
@@ -96,6 +96,8 @@ void AVIVideoEncoderVFW::Init()
   aco.fccType = streamtypeVIDEO;
   aco.fccHandler = codec;
   aco.dwQuality = d->quality;
+  aco.lpParms = params.CodecDataSize ? params.CodecSpecificData : 0;
+  aco.cbParms = params.CodecDataSize;
 
   if(AVIMakeCompressedStream(&d->vidC,d->vid,&aco,0) != AVIERR_OK)
   {
@@ -114,6 +116,7 @@ cleanup:
 void AVIVideoEncoderVFW::Cleanup()
 {
   EnterCriticalSection(&d->lock);
+
   if(d->initialized)
   {
     printLog("avi_vfw: stopped recording\n");
@@ -157,7 +160,7 @@ void AVIVideoEncoderVFW::Cleanup()
     printLog("avi_vfw: avifile shutdown complete\n");
     d->initialized = false;
   }
-  
+
   LeaveCriticalSection(&d->lock);
 }
 
@@ -169,30 +172,28 @@ void AVIVideoEncoderVFW::StartEncode()
   if(!d->file)
     return;
 
-  EnterCriticalSection(&d->lock);
-
-  // set stream format
-  ZeroMemory(&bmi,sizeof(bmi));
-  bmi.biSize        = sizeof(bmi);
-  bmi.biWidth       = xRes;
-  bmi.biHeight      = yRes;
-  bmi.biPlanes      = 1;
-  bmi.biBitCount    = 24;
-  bmi.biCompression = BI_RGB;
-  bmi.biSizeImage   = xRes * yRes * 3;
-  if(AVIStreamSetFormat(d->vidC,0,&bmi,sizeof(bmi)) != AVIERR_OK)
   {
-    printLog("avi_vfw: AVIStreamSetFormat (video) failed\n");
-    goto cleanup;
+    Lock lock(d->lock);
+
+    // set stream format
+    ZeroMemory(&bmi,sizeof(bmi));
+    bmi.biSize        = sizeof(bmi);
+    bmi.biWidth       = xRes;
+    bmi.biHeight      = yRes;
+    bmi.biPlanes      = 1;
+    bmi.biBitCount    = 24;
+    bmi.biCompression = BI_RGB;
+    bmi.biSizeImage   = xRes * yRes * 3;
+    if(AVIStreamSetFormat(d->vidC,0,&bmi,sizeof(bmi)) == AVIERR_OK)
+    {
+      error = false;
+      printLog("avi_vfw: opened video stream at %.3f fps (%d/%d)\n",1.0f*fpsNum/fpsDenom,fpsNum,fpsDenom);
+      frame = 0;
+      d->formatSet = true;
+    }
+    else
+      printLog("avi_vfw: AVIStreamSetFormat (video) failed\n");
   }
-
-  error = false;
-  printLog("avi_vfw: opened video stream at %.2f fps\n",fps);
-  frame = 0;
-  d->formatSet = true;
-
-cleanup:
-  LeaveCriticalSection(&d->lock);
 
   if(error)
     Cleanup();
@@ -241,7 +242,7 @@ void AVIVideoEncoderVFW::StartAudioEncode(const tWAVEFORMATEX *fmt)
 
   // fill already written frames with no sound
   unsigned char *buffer = new unsigned char[audioBytesSample * 1024];
-  int sampleFill = int(1.0f * fmt->nSamplesPerSec * frame / fps);
+  int sampleFill = MulDiv(frame,fmt->nSamplesPerSec * fpsDenom,fpsNum);
 
   memset(buffer,0,audioBytesSample * 1024);
   for(int samplePos=0;samplePos<sampleFill;samplePos+=1024)
@@ -256,14 +257,15 @@ cleanup:
     Cleanup();
 }
 
-AVIVideoEncoderVFW::AVIVideoEncoderVFW(const char *name,float _fps,unsigned long codec,unsigned int quality)
+AVIVideoEncoderVFW::AVIVideoEncoderVFW(const char *name,int _fpsNum,int _fpsDenom,unsigned long codec,unsigned int quality)
 {
   bool error = true;
 
   xRes = yRes = 0;
   frame = 0;
   audioSample = 0;
-  fps = _fps;
+  fpsNum = _fpsNum;
+  fpsDenom = _fpsDenom;
 
   d = new Internal;
   d->file = 0;
@@ -273,7 +275,7 @@ AVIVideoEncoderVFW::AVIVideoEncoderVFW(const char *name,float _fps,unsigned long
   
   // determine file base name
   strcpy_s(d->basename,sizeof(d->basename),name);
-  for(int i=strlen(d->basename)-1;i>=0;i--)
+  for(int i=(int) strlen(d->basename)-1;i>=0;i--)
   {
     if(d->basename[i] == '/' || d->basename[i] == '\\')
       break;
@@ -314,7 +316,7 @@ void AVIVideoEncoderVFW::SetSize(int _xRes,int _yRes)
 void AVIVideoEncoderVFW::WriteFrame(const unsigned char *buffer)
 {
   // encode the frame
-  EnterCriticalSection(&d->lock);
+  Lock lock(d->lock);
 
   if(!frame && !d->formatSet && xRes && yRes && params.CaptureVideo)
     StartEncode();
@@ -340,8 +342,6 @@ void AVIVideoEncoderVFW::WriteFrame(const unsigned char *buffer)
     frame++;
     d->overflowCounter += written;
   }
-  
-  LeaveCriticalSection(&d->lock);
 }
 
 void AVIVideoEncoderVFW::SetAudioFormat(const tWAVEFORMATEX *fmt)
@@ -360,7 +360,7 @@ void AVIVideoEncoderVFW::GetAudioFormat(tWAVEFORMATEX *fmt)
 
 void AVIVideoEncoderVFW::WriteAudioFrame(const void *buffer,int samples)
 {
-  EnterCriticalSection(&d->lock);
+  Lock lock(d->lock);
 
   if(params.CaptureAudio && !d->aud)
     StartAudioEncode(&d->wfx);
@@ -388,6 +388,4 @@ void AVIVideoEncoderVFW::WriteAudioFrame(const void *buffer,int samples)
       d->overflowCounter += written;
     }
   }
-
-  LeaveCriticalSection(&d->lock);
 }

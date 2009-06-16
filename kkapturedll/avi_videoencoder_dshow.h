@@ -1,5 +1,5 @@
 /* kkapture: intrusive demo video capturing.
- * Copyright (c) 2005-2006 Fabian "ryg/farbrausch" Giesen.
+ * Copyright (c) 2005-2009 Fabian "ryg/farbrausch" Giesen.
  *
  * This program is free software; you can redistribute and/or modify it under
  * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
@@ -36,7 +36,7 @@ class AVIVideoEncoderDShow : public VideoEncoder
   int xRes,yRes;
   int frame;
   int audioSample,audioBytesSample;
-  float fps;
+  int fpsNum,fpsDenom;
   Internal *d;
 
   void Cleanup();
@@ -44,7 +44,7 @@ class AVIVideoEncoderDShow : public VideoEncoder
   void StartAudioEncode(const tWAVEFORMATEX *fmt);
 
 public:
-  AVIVideoEncoderDShow(const char *name,float _fps,unsigned long codec,unsigned quality);
+  AVIVideoEncoderDShow(const char *name,int fpsNum,int fpsDenom,unsigned long codec,unsigned quality);
   virtual ~AVIVideoEncoderDShow();
 
   virtual void SetSize(int xRes,int yRes);

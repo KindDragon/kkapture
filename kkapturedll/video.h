@@ -1,5 +1,5 @@
 /* kkapture: intrusive demo video capturing.
- * Copyright (c) 2005-2006 Fabian "ryg/farbrausch" Giesen.
+ * Copyright (c) 2005-2009 Fabian "ryg/farbrausch" Giesen.
  *
  * This program is free software; you can redistribute and/or modify it under
  * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
@@ -36,14 +36,17 @@ public:
 VideoEncoder *createVideoEncoder(const char *filename);
 void videoStartNextPart(bool autoSize=true);
 
+void videoNeedEncoder();
+
 // setup
 void initVideo();
 void doneVideo();
 
 // init functions
 void initVideo_OpenGL();
-void initVideo_Direct3D9();
 void initVideo_Direct3D8();
+void initVideo_Direct3D9();
+void initVideo_Direct3D10();
 void initVideo_DirectDraw();
 
 // helpers
@@ -55,6 +58,7 @@ void skipFrame();
 
 // capture helpers
 void blitAndFlipBGRAToCaptureData(unsigned char *source,unsigned pitch);
+void blitAndFlipRGBAToCaptureData(unsigned char *source,unsigned pitch);
 
 extern int captureWidth, captureHeight;
 extern unsigned char *captureData;
