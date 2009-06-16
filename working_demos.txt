@@ -1,0 +1,14 @@
+checked and working demos (alphabetical order):
+
+- a deepness in the sky/mfx
+- aether/mfx
+- arise/stravaganza
+- coma (on the dancefloor)/cocoon
+- fr-025: the popular demo/farbrausch
+- planet risk/asd
+- structure/ümlaüt design
+
+checked and working with problems:
+- wonder/sunflower (sometimes skips in sound)
+
+checked and not working:
