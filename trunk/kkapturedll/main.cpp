@@ -1,5 +1,5 @@
 /* kkapture: intrusive demo video capturing.
- * Copyright (c) 2005-2006 Fabian "ryg/farbrausch" Giesen.
+ * Copyright (c) 2005-2009 Fabian "ryg/farbrausch" Giesen.
  *
  * This program is free software; you can redistribute and/or modify it under
  * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
@@ -29,8 +29,7 @@
 #include "videoencoder.h"
 
 VideoEncoder *encoder = 0;
-float frameRate = 10;
-int frameRateScaled = 1000;
+int frameRateScaled = 1000, frameRateDenom = 100;
 ParameterBlock params;
 
 static CRITICAL_SECTION shuttingDown;
@@ -247,22 +246,22 @@ static void init()
     printLog("main: couldn't access parameter block or wrong version");
 
     frameRateScaled = 1000;
+    frameRateDenom = 100;
     encoder = new DummyVideoEncoder;
   }
   else
   {
     printLog("main: reading parameter block...\n");
 
-    frameRateScaled = params.FrameRate;
-    encoder = createVideoEncoder(params.FileName);
-    printLog("main: video encoder initialized.\n");
+    frameRateScaled = params.FrameRateNum;
+    frameRateDenom = params.FrameRateDenom;
+    encoder = 0;
   }
 
   // install our hook so we get notified of process exit (hopefully)
   DetourFunctionWithTrampoline((PBYTE) Real_ExitProcess, (PBYTE) Mine_ExitProcess);
   hHookThread = (HANDLE) _beginthread(HookThreadProc,0,0);
 
-  frameRate = frameRateScaled / 100.0f;
   initialized = true;
 
   printLog("main: initialization done\n");

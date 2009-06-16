@@ -1,5 +1,5 @@
 /* kkapture: intrusive demo video capturing.
- * Copyright (c) 2005-2006 Fabian "ryg/farbrausch" Giesen.
+ * Copyright (c) 2005-2009 Fabian "ryg/farbrausch" Giesen.
  *
  * This program is free software; you can redistribute and/or modify it under
  * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
@@ -24,10 +24,8 @@
 #include "videocapturetimer.h"
 #include "video.h"
 #include <malloc.h>
-#include <intrin.h>
 #include <process.h>
 
-#pragma intrinsic(_ReadWriteBarrier)
 #pragma comment(lib, "winmm.lib")
 
 // events
@@ -71,7 +69,6 @@ static void seedAllTimers()
   if(!TimersSeeded)
   {
     EnterCriticalSection(&TimerSeedLock);
-    _ReadWriteBarrier();
 
     if(!TimersSeeded)
     {
@@ -82,7 +79,6 @@ static void seedAllTimers()
       // never actually mark timers as seeded in the first frame (i.e. before anything
       // was presented) - you get problems with config dialogs etc. otherweise
       TimersSeeded = getFrameTiming() != 0;
-      _ReadWriteBarrier();
     }
 
     LeaveCriticalSection(&TimerSeedLock);
@@ -93,8 +89,10 @@ static void seedAllTimers()
 
 BOOL __stdcall Mine_QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency)
 {
-  if(!IsBadWritePtr(lpFrequency,sizeof(LARGE_INTEGER)))
+  if(lpFrequency)
     lpFrequency->QuadPart = perfFrequency;
+  //if(!IsBadWritePtr(lpFrequency,sizeof(LARGE_INTEGER)))
+  //  lpFrequency->QuadPart = perfFrequency;
 
   return TRUE;
 }
@@ -104,8 +102,8 @@ BOOL __stdcall Mine_QueryPerformanceCounter(LARGE_INTEGER *lpCounter)
   int frame = getFrameTiming();
   seedAllTimers();
 
-  if(!IsBadWritePtr(lpCounter,sizeof(LARGE_INTEGER)))
-    lpCounter->QuadPart = firstTimeQPC.QuadPart + ULongMulDiv(perfFrequency,frame*100,frameRateScaled);
+  if(lpCounter)
+    lpCounter->QuadPart = firstTimeQPC.QuadPart + ULongMulDiv(perfFrequency,frame*frameRateDenom,frameRateScaled);
 
   return TRUE;
 }
@@ -116,7 +114,7 @@ DWORD __stdcall Mine_GetTickCount()
   int frame = getFrameTiming();
   seedAllTimers();
 
-  return firstTimeTGT + UMulDiv(frame,1000*100,frameRateScaled);
+  return firstTimeTGT + UMulDiv(frame,1000*frameRateDenom,frameRateScaled);
 }
 
 DWORD __stdcall Mine_timeGetTime()
@@ -124,7 +122,7 @@ DWORD __stdcall Mine_timeGetTime()
   int frame = getFrameTiming();
   seedAllTimers();
 
-  return firstTimeTGT + UMulDiv(frame,1000*100,frameRateScaled);
+  return firstTimeTGT + UMulDiv(frame,1000*frameRateDenom,frameRateScaled);
 }
 
 MMRESULT __stdcall Mine_timeGetSystemTime(MMTIME *pmmt,UINT cbmmt)
@@ -138,7 +136,7 @@ void __stdcall Mine_GetSystemTimeAsFileTime(FILETIME *time)
   seedAllTimers();
 
   LONGLONG baseTime = *((LONGLONG *) &firstTimeGSTAFT);
-  LONGLONG elapsedSince = ULongMulDiv(1000000000,frame,frameRateScaled);
+  LONGLONG elapsedSince = ULongMulDiv(10000000,frame * frameRateDenom,frameRateScaled);
   LONGLONG finalTime = baseTime + elapsedSince;
 
   *((LONGLONG *) time) = finalTime;
@@ -299,7 +297,7 @@ VOID __stdcall Mine_Sleep(DWORD dwMilliseconds)
 
 DWORD __stdcall Mine_WaitForSingleObject(HANDLE hHandle,DWORD dwMilliseconds)
 {
-  if(dwMilliseconds != INFINITE)
+  if(dwMilliseconds <= 0x7fffffff)
   {
     Real_WaitForSingleObject(resyncEvent,INFINITE);
     IncrementWaiting();
@@ -321,7 +319,7 @@ DWORD __stdcall Mine_WaitForSingleObject(HANDLE hHandle,DWORD dwMilliseconds)
 DWORD __stdcall Mine_WaitForMultipleObjects(DWORD nCount,CONST HANDLE *lpHandles,BOOL bWaitAll,DWORD dwMilliseconds)
 {
   // infinite waits are always passed through
-  if(dwMilliseconds == INFINITE)
+  if(dwMilliseconds <= 0x7fffffff)
     return Real_WaitForMultipleObjects(nCount,lpHandles,bWaitAll,dwMilliseconds);
   else
   {
@@ -353,7 +351,7 @@ DWORD __stdcall Mine_WaitForMultipleObjects(DWORD nCount,CONST HANDLE *lpHandles
 DWORD __stdcall Mine_MsgWaitForMultipleObjects(DWORD nCount,CONST HANDLE *lpHandles,BOOL bWaitAll,DWORD dwMilliseconds,DWORD dwWakeMask)
 {
   // infinite waits are always passed through
-  if(dwMilliseconds == INFINITE)
+  if(dwMilliseconds <= 0x7fffffff)
     return Real_MsgWaitForMultipleObjects(nCount,lpHandles,bWaitAll,dwMilliseconds,dwWakeMask);
   else
   {
@@ -527,8 +525,8 @@ void nextFrameTiming()
   
   //Real_Sleep(5);
 
-  DWORD oldFrameTime = UMulDiv(currentFrame,1000*100,frameRateScaled);
-  DWORD newFrameTime = UMulDiv(currentFrame+1,1000*100,frameRateScaled);
+  DWORD oldFrameTime = UMulDiv(currentFrame,1000*frameRateDenom,frameRateScaled);
+  DWORD newFrameTime = UMulDiv(currentFrame+1,1000*frameRateDenom,frameRateScaled);
   ProcessEventTimers(newFrameTime - oldFrameTime);
 
   if(!currentFrame)
@@ -541,6 +539,9 @@ void nextFrameTiming()
     SetWaitableTimer(stuckTimer,&due,0,0,0,FALSE);
   }
 
+  // make sure there's always a message in the queue for next frame
+  // (some old hjb intros stop when there's no new messages)
+  PostMessage(GetForegroundWindow(),WM_NULL,0,0);
   currentFrame++;
 }
 

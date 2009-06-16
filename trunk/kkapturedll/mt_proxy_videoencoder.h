@@ -22,29 +22,26 @@
 
 #pragma once
 
-#ifndef __AVI_VIDEOENCODER_VFW_H__
-#define __AVI_VIDEOENCODER_VFW_H__
+#ifndef __MT_PROXY_VIDEOENCODER_H__
+#define __MT_PROXY_VIDEOENCODER_H__
 
 #include "videoencoder.h"
 
-class AVIVideoEncoderVFW : public VideoEncoder
+// Acts as a proxy to pass data to a real encoder running in another thread
+// (to increase parallelism between encoding and capturing)
+
+class MTProxyVideoEncoder : public VideoEncoder
 {
   struct Internal;
-  
-  int xRes,yRes;
-  int frame;
-  int audioSample,audioBytesSample;
-  int fpsNum,fpsDenom;
   Internal *d;
 
-  void Init();
-  void Cleanup();
-  void StartEncode();
-  void StartAudioEncode(const tWAVEFORMATEX *fmt);
+  static unsigned __stdcall QueueRunner(void *para);
+  static void* MakeCopy(const void *ptr, int size);
 
 public:
-  AVIVideoEncoderVFW(const char *name,int fpsNum,int fpsDenom,unsigned long codec,unsigned int quality);
-  virtual ~AVIVideoEncoderVFW();
+  // Transfers ownership of the video encoder to this object!
+  MTProxyVideoEncoder(VideoEncoder *actual);
+  virtual ~MTProxyVideoEncoder();
 
   virtual void SetSize(int xRes,int yRes);
   virtual void WriteFrame(const unsigned char *buffer);

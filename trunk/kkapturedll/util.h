@@ -1,5 +1,5 @@
 /* kkapture: intrusive demo video capturing.
- * Copyright (c) 2005-2006 Fabian "ryg/farbrausch" Giesen.
+ * Copyright (c) 2005-2009 Fabian "ryg/farbrausch" Giesen.
  *
  * This program is free software; you can redistribute and/or modify it under
  * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
@@ -28,9 +28,21 @@ void initLog();
 void closeLog();
 void printLog(const char *format,...);
 
-// ---- logging used for debugging kkapture
+// ---- logging used to debug kkapture
 //#define TRACE(x) printLog x
 #define TRACE(x)
+
+// ---- lock holder for critical sections
+class Lock
+{
+  CRITICAL_SECTION* CS;
+
+public:
+  Lock(CRITICAL_SECTION *cs) : CS(cs)   { EnterCriticalSection(CS); }
+  Lock(CRITICAL_SECTION &cs) : CS(&cs)  { EnterCriticalSection(CS); }
+
+  ~Lock()                               { LeaveCriticalSection(CS); }
+};
 
 // ---- vtable patching
 PBYTE DetourCOM(IUnknown *obj,int vtableOffs,PBYTE newFunction);

@@ -1,5 +1,5 @@
 /* kkapture: intrusive demo video capturing.
- * Copyright (c) 2005-2006 Fabian "ryg/farbrausch" Giesen.
+ * Copyright (c) 2005-2009 Fabian "ryg/farbrausch" Giesen.
  *
  * This program is free software; you can redistribute and/or modify it under
  * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
@@ -134,7 +134,7 @@ void BMPVideoEncoder::SetAudioFormat(const tWAVEFORMATEX *fmt)
 
     // fill already written frames with no sound
     unsigned char *buffer = new unsigned char[fmt->nBlockAlign * 1024];
-    int sampleFill = MulDiv(frame*100,fmt->nSamplesPerSec,frameRateScaled);
+    int sampleFill = MulDiv(frame,fmt->nSamplesPerSec*frameRateDenom,frameRateScaled);
 
     memset(buffer,0,fmt->nBlockAlign * 1024);
     for(int samplePos=0;samplePos<sampleFill;samplePos+=1024)

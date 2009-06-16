@@ -1,5 +1,5 @@
 /* kkapture: intrusive demo video capturing.
- * Copyright (c) 2005-2006 Fabian "ryg/farbrausch" Giesen.
+ * Copyright (c) 2005-2009 Fabian "ryg/farbrausch" Giesen.
  *
  * This program is free software; you can redistribute and/or modify it under
  * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <assert.h>
 #include <tchar.h>
 #include "../kkapturedll/main.h"
 #include "resource.h"
@@ -106,15 +107,17 @@ static void LoadSettingsFromRegistry()
   if(RegOpenKeyEx(HKEY_CURRENT_USER,RegistryKeyName,0,KEY_READ,&hk) != ERROR_SUCCESS)
     hk = 0;
 
-  Params.FrameRate = RegQueryDWord(hk,_T("FrameRate"),6000);
+  Params.FrameRateNum = RegQueryDWord(hk,_T("FrameRate"),6000);
+  Params.FrameRateDenom = RegQueryDWord(hk,_T("FrameRateDenom"),100);
   Params.Encoder = (EncoderType) RegQueryDWord(hk,_T("VideoEncoder"),AVIEncoderVFW);
   Params.VideoCodec = RegQueryDWord(hk,_T("AVIVideoCodec"),mmioFOURCC('D','I','B',' '));
   Params.VideoQuality = RegQueryDWord(hk,_T("AVIVideoQuality"),ICQUALITY_DEFAULT);
   Params.NewIntercept = RegQueryDWord(hk,_T("NewIntercept"),0);
-  Params.FairlightHack = RegQueryDWord(hk,_T("FairlightHack"),0);
+  Params.SoundsysInterception = RegQueryDWord(hk,_T("SoundsysInterception"),1);
   Params.EnableAutoSkip = RegQueryDWord(hk,_T("EnableAutoSkip"),0);
   Params.FirstFrameTimeout = RegQueryDWord(hk,_T("FirstFrameTimeout"),1000);
   Params.FrameTimeout = RegQueryDWord(hk,_T("FrameTimeout"),500);
+  Params.UseEncoderThread = RegQueryDWord(hk,_T("UseEncoderThread"),0);
 
   if(hk)
     RegCloseKey(hk);
@@ -126,17 +129,94 @@ static void SaveSettingsToRegistry()
 
   if(RegCreateKeyEx(HKEY_CURRENT_USER,RegistryKeyName,0,0,0,KEY_ALL_ACCESS,0,&hk,0) == ERROR_SUCCESS)
   {
-    RegSetDWord(hk,_T("FrameRate"),Params.FrameRate);
+    RegSetDWord(hk,_T("FrameRate"),Params.FrameRateNum);
+    RegSetDWord(hk,_T("FrameRateDenom"),Params.FrameRateDenom);
     RegSetDWord(hk,_T("VideoEncoder"),Params.Encoder);
     RegSetDWord(hk,_T("AVIVideoCodec"),Params.VideoCodec);
     RegSetDWord(hk,_T("AVIVideoQuality"),Params.VideoQuality);
     RegSetDWord(hk,_T("NewIntercept"),Params.NewIntercept);
-    RegSetDWord(hk,_T("FairlightHack"),Params.FairlightHack);
+    RegSetDWord(hk,_T("SoundsysInterception"),Params.SoundsysInterception);
     RegSetDWord(hk,_T("EnableAutoSkip"),Params.EnableAutoSkip);
     RegSetDWord(hk,_T("FirstFrameTimeout"),Params.FirstFrameTimeout);
     RegSetDWord(hk,_T("FrameTimeout"),Params.FrameTimeout);
+    RegSetDWord(hk,_T("UseEncoderThread"),Params.UseEncoderThread);
     RegCloseKey(hk);
   }
+}
+
+static int IntPow(int a,int b)
+{
+  int x = 1;
+  while(b-- > 0)
+    x *= a;
+
+  return x;
+}
+
+// log10(x) if x is a nonnegative power of 10, -1 otherwise
+static int GetPowerOf10(int x)
+{
+  int power = 0;
+  while((x % 10) == 0)
+  {
+    power++;
+    x /= 10;
+  }
+
+  return (x == 1) ? power : -1;
+}
+
+static void FormatRational(TCHAR *buffer,int nChars,int num,int denom)
+{
+  int d10 = GetPowerOf10(denom);
+  if(d10 != -1) // decimal power
+    _sntprintf(buffer,nChars,"%d.%0*d",num/denom,d10,num%denom);
+  else // general rational
+    _sntprintf(buffer,nChars,"%d/%d",num,denom);
+
+  buffer[nChars-1] = 0;
+}
+
+static bool ParsePositiveRational(const TCHAR *buffer,int &num,int &denom)
+{
+  TCHAR *end;
+  long intPart = _tcstol(buffer,&end,10);
+  if(intPart < 0 || end == buffer)
+    return false;
+
+  if(*end == 0)
+  {
+    num = intPart;
+    denom = 1;
+    return num > 0;
+  }
+  else if(*end == '.') // decimal notation
+  {
+    end++;
+    int digits = 0;
+    while(end[digits] >= '0' && end[digits] <= '9')
+      digits++;
+
+    if(!digits || end[digits] != 0) // invalid character in digit string
+      return false;
+
+    denom = IntPow(10,digits);
+    long fracPart = _tcstol(end,&end,10);
+    if(intPart > (LONG_MAX - fracPart) / denom) // overflow
+      return false;
+
+    num = intPart * denom + fracPart;
+    return true;
+  }
+  else if(*end == '/') // rational number
+  {
+    const TCHAR *rest = end + 1;
+    num = intPart;
+    denom = _tcstol(rest,&end,10);
+    return (denom > 0) && (end != rest) && *end == 0;
+  }
+  else // invalid character
+    return false;
 }
 
 static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPARAM lParam)
@@ -157,7 +237,8 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
 
       // set gui values
       TCHAR buffer[32];
-      _stprintf(buffer,"%d.%02d",Params.FrameRate/100,Params.FrameRate%100);
+      FormatRational(buffer,32,Params.FrameRateNum,Params.FrameRateDenom);
+      //_stprintf(buffer,"%d.%02d",Params.FrameRate/100,Params.FrameRate%100);
       SetDlgItemText(hWndDlg,IDC_FRAMERATE,buffer);
 
       _stprintf(buffer,"%d.%02d",Params.FirstFrameTimeout/1000,(Params.FirstFrameTimeout/10)%100);
@@ -190,7 +271,8 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
         EnableDlgItem(hWndDlg,IDC_OTHERFRAMETIMEOUT,FALSE);
       }
 
-      CheckDlgButton(hWndDlg,IDC_FAIRLIGHTHACK,Params.FairlightHack ? BST_CHECKED : BST_UNCHECKED);
+      CheckDlgButton(hWndDlg,IDC_SOUNDSYS,Params.SoundsysInterception ? BST_CHECKED : BST_UNCHECKED);
+      CheckDlgButton(hWndDlg,IDC_ENCODERTHREAD,Params.UseEncoderThread ? BST_CHECKED : BST_UNCHECKED);
 
       HIC codec = ICOpen(ICTYPE_VIDEO,Params.VideoCodec,ICMODE_QUERY);
       SetVideoCodecInfo(hWndDlg,codec);
@@ -239,13 +321,21 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
         else
           CloseHandle(hFile);
 
-        double frameRate = atof(frameRateStr);
+        int frameRateNum,frameRateDenom;
+        if(!ParsePositiveRational(frameRateStr,frameRateNum,frameRateDenom)
+          || frameRateNum < 0 || frameRateNum / frameRateDenom >= 1000)
+        {
+          MessageBox(hWndDlg,_T("Please enter a valid frame rate between 0 and 1000 "
+            "(either as decimal or rational)."),_T(".kkapture"),MB_ICONERROR|MB_OK);
+          return TRUE;
+        }
+        /*double frameRate = atof(frameRateStr);
         if(frameRate <= 0.0 || frameRate >= 1000.0)
         {
           MessageBox(hWndDlg,_T("Please enter a valid frame rate."),
             _T(".kkapture"),MB_ICONERROR|MB_OK);
           return TRUE;
-        }
+        }*/
 
         if(autoSkip)
         {
@@ -269,7 +359,9 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
           Params.FrameTimeout = DWORD(oft*1000);
         }
 
-        Params.FrameRate = int(frameRate * 100);
+        Params.FrameRateNum = frameRateNum;
+        Params.FrameRateDenom = frameRateDenom;
+        //Params.FrameRate = int(frameRate * 100);
         Params.Encoder = (EncoderType) (1 + SendDlgItemMessage(hWndDlg,IDC_ENCODER,CB_GETCURSEL,0,0));
 
         Params.CaptureVideo = IsDlgButtonChecked(hWndDlg,IDC_VCAPTURE) == BST_CHECKED;
@@ -278,9 +370,10 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
         Params.MakeSleepsLastOneFrame = IsDlgButtonChecked(hWndDlg,IDC_SLEEPLAST) == BST_CHECKED;
         Params.SleepTimeout = 2500; // yeah, this should be configurable
         Params.NewIntercept = IsDlgButtonChecked(hWndDlg,IDC_NEWINTERCEPT) == BST_CHECKED;
-        Params.FairlightHack = IsDlgButtonChecked(hWndDlg,IDC_FAIRLIGHTHACK) == BST_CHECKED;
+        Params.SoundsysInterception = IsDlgButtonChecked(hWndDlg,IDC_SOUNDSYS) == BST_CHECKED;
         Params.EnableAutoSkip = autoSkip;
         Params.PowerDownAfterwards = IsDlgButtonChecked(hWndDlg,IDC_POWERDOWN) == BST_CHECKED;
+        Params.UseEncoderThread = IsDlgButtonChecked(hWndDlg,IDC_ENCODERTHREAD) == BST_CHECKED;
 
         // save settings for next time
         SaveSettingsToRegistry();
@@ -370,6 +463,15 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
           Params.VideoCodec = cv.fccHandler;
           Params.VideoQuality = cv.lQ;
           SetVideoCodecInfo(hWndDlg,cv.hic);
+
+          if(cv.cbState <= sizeof(Params.CodecSpecificData))
+          {
+            Params.CodecDataSize = cv.cbState;
+            memcpy(Params.CodecSpecificData, cv.lpState, cv.cbState);
+          }
+          else
+            Params.CodecDataSize = 0;
+
           ICCompressorFree(&cv);
         }
       }
@@ -463,29 +565,38 @@ static bool PrepareInstrumentation(HANDLE hProcess,BYTE *workArea,TCHAR *dllName
   code = DetourGenCall(code,loadLibrary,workArea + (code - buffer.code));
   code = DetourGenPopad(code);
 
-  // Check whether startup code begins with a call or jump
+  // Copy startup code
   BYTE *sourcePtr = origCode;
-
-  if(sourcePtr[0] == 0xe8 || sourcePtr[0] == 0xe9) // Yes, we can jump/call there too
+  DWORD relPos;
+  while((relPos = sourcePtr - origCode) < sizeof(jumpCode))
   {
-    // Copy the opcode
-    *code++ = *sourcePtr++;
+    if(sourcePtr[0] == 0xe8 || sourcePtr[0] == 0xe9) // Yes, we can jump/call there too
+    {
+      if(sourcePtr[0] == 0xe8)
+      {
+        // turn a call into a push/jump sequence; this is necessary in case someone
+        // decides to do computations based on the return address in the stack frame
+        code = DetourGenPush(code,(UINT32) (entryPoint + relPos + 5));
+        *code++ = 0xe9; // rest of flow continues with a jmp near
+        sourcePtr++;
+      }
+      else // just copy the opcode
+        *code++ = *sourcePtr++;
 
-    // Copy target address, compensating for offset
-    *((DWORD *) code) = *((DWORD *) sourcePtr)
-      + entryPoint + (sourcePtr - origCode) + 4 // add back original position
-      - (workArea + (code - buffer.code) + 4);  // subtract new position
+      // Copy target address, compensating for offset
+      *((DWORD *) code) = *((DWORD *) sourcePtr)
+        + entryPoint + relPos + 1             // add back original position
+        - (workArea + (code - buffer.code));  // subtract new position
 
-    code += 4;
-    sourcePtr += 4;
-  }
-  else // No, we have to copy instructions
-  {
-    // Copy over first few bytes from startup code
-    while((sourcePtr - origCode) < sizeof(jumpCode))
-      sourcePtr = DetourCopyInstruction(code + (sourcePtr - origCode),sourcePtr,0);
-
-    code += sourcePtr - origCode;
+      code += 4;
+      sourcePtr += 4;
+    }
+    else // not a jump/call, copy instruction
+    {
+      BYTE *oldPtr = sourcePtr;
+      sourcePtr = DetourCopyInstruction(code,sourcePtr,0);
+      code += sourcePtr - oldPtr;
+    }
   }
 
   // Jump to rest

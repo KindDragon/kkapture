@@ -1,5 +1,5 @@
 /* kkapture: intrusive demo video capturing.
- * Copyright (c) 2005-2006 Fabian "ryg/farbrausch" Giesen.
+ * Copyright (c) 2005-2009 Fabian "ryg/farbrausch" Giesen.
  *
  * This program is free software; you can redistribute and/or modify it under
  * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
@@ -27,6 +27,7 @@
 #include "bmp_videoencoder.h"
 #include "avi_videoencoder_vfw.h"
 #include "avi_videoencoder_dshow.h"
+#include "mt_proxy_videoencoder.h"
 
 static CRITICAL_SECTION captureDataLock;
 static bool gotDataLock = false;
@@ -57,23 +58,32 @@ VideoEncoder *createVideoEncoder(const char *filename)
     break;
 
   case AVIEncoderVFW:
-    encoder = new AVIVideoEncoderVFW(filename,frameRateScaled/100.0f,params.VideoCodec,params.VideoQuality);
+    encoder = new AVIVideoEncoderVFW(filename,frameRateScaled,frameRateDenom,params.VideoCodec,params.VideoQuality);
     break;
 
+#if USE_DSHOW_AVI_WRITER
   case AVIEncoderDShow:
-    encoder = new AVIVideoEncoderDShow(filename,frameRateScaled/100.0f,params.VideoCodec,params.VideoQuality);
+    encoder = new AVIVideoEncoderDShow(filename,frameRateScaled,frameRateDenom,params.VideoCodec,params.VideoQuality);
     break;
+#endif
 
   default:
+    printLog("video: encoder type not supported in this build - not writing anything.\n");
     encoder = new DummyVideoEncoder;
     break;
   }
+
+  // multithread wrapper
+  if(params.UseEncoderThread)
+    encoder = new MTProxyVideoEncoder(encoder);
 
   return encoder;
 }
 
 void videoStartNextPart(bool autoSize)
 {
+  videoNeedEncoder();
+
   // get the current audio format (so we can resume audio seamlessly)
   WAVEFORMATEX wfx;
   encoder->GetAudioFormat(&wfx);
@@ -114,6 +124,15 @@ void videoStartNextPart(bool autoSize)
     encoder->SetAudioFormat(&wfx);
 }
 
+void videoNeedEncoder()
+{
+  if(!encoder)
+  {
+    encoder = createVideoEncoder(params.FileName);
+    printLog("main: video encoder initialized.\n");
+  }
+}
+
 // capture buffer
 int captureWidth = 0, captureHeight = 0;
 unsigned char *captureData = 0;
@@ -148,6 +167,8 @@ void setCaptureResolution(int inWidth,int inHeight)
   bool unaligned;
   int width,height;
 
+  videoNeedEncoder();
+  
   if((inWidth & 3) || (inHeight & 3))
   {
     width = inWidth & ~3;
@@ -181,6 +202,8 @@ void setCaptureResolution(int inWidth,int inHeight)
 // advance frame
 void nextFrame()
 {
+  videoNeedEncoder();
+
   seenFrames = true;
   nextFrameTiming();
   nextFrameSound();
@@ -189,6 +212,7 @@ void nextFrame()
 // skip this frame (same as nextFrame(), but duplicating old frame data)
 void skipFrame()
 {
+  videoNeedEncoder();
   {
     VideoCaptureDataLock lock;
 
@@ -297,6 +321,24 @@ void blitAndFlipBGRAToCaptureData(unsigned char *source,unsigned pitch)
   }
 }
 
+void blitAndFlipRGBAToCaptureData(unsigned char *source,unsigned pitch)
+{
+  for(int y=0;y<captureHeight;y++)
+  {
+    unsigned char *src = source + (captureHeight - 1 - y) * pitch;
+    unsigned char *dst = captureData + y * captureWidth * 3;
+
+    for(int x=0;x<captureWidth;x++)
+    {
+      dst[0] = src[2];
+      dst[1] = src[1];
+      dst[2] = src[0];
+      dst += 3;
+      src += 4;
+    }
+  }
+}
+
 // public interface
 void initVideo()
 {
@@ -307,8 +349,9 @@ void initVideo()
   seenFrames = false;
 
 	initVideo_OpenGL();
-	initVideo_Direct3D9();
 	initVideo_Direct3D8();
+	initVideo_Direct3D9();
+  initVideo_Direct3D10();
 	initVideo_DirectDraw();
 }
 
