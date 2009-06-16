@@ -62,6 +62,7 @@ struct ParameterBlock
   BOOL MakeSleepsLastOneFrame;
   DWORD SleepTimeout;
   BOOL NewIntercept;
+  BOOL FairlightHack;
 
   BOOL EnableAutoSkip;
   DWORD FirstFrameTimeout;

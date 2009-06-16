@@ -107,10 +107,11 @@ static void LoadSettingsFromRegistry()
     hk = 0;
 
   Params.FrameRate = RegQueryDWord(hk,_T("FrameRate"),6000);
-  Params.Encoder = (EncoderType) RegQueryDWord(hk,_T("VideoEncoder"),AVIEncoderDShow);
+  Params.Encoder = (EncoderType) RegQueryDWord(hk,_T("VideoEncoder"),AVIEncoderVFW);
   Params.VideoCodec = RegQueryDWord(hk,_T("AVIVideoCodec"),mmioFOURCC('D','I','B',' '));
   Params.VideoQuality = RegQueryDWord(hk,_T("AVIVideoQuality"),ICQUALITY_DEFAULT);
   Params.NewIntercept = RegQueryDWord(hk,_T("NewIntercept"),0);
+  Params.FairlightHack = RegQueryDWord(hk,_T("FairlightHack"),0);
   Params.EnableAutoSkip = RegQueryDWord(hk,_T("EnableAutoSkip"),0);
   Params.FirstFrameTimeout = RegQueryDWord(hk,_T("FirstFrameTimeout"),1000);
   Params.FrameTimeout = RegQueryDWord(hk,_T("FrameTimeout"),500);
@@ -130,6 +131,7 @@ static void SaveSettingsToRegistry()
     RegSetDWord(hk,_T("AVIVideoCodec"),Params.VideoCodec);
     RegSetDWord(hk,_T("AVIVideoQuality"),Params.VideoQuality);
     RegSetDWord(hk,_T("NewIntercept"),Params.NewIntercept);
+    RegSetDWord(hk,_T("FairlightHack"),Params.FairlightHack);
     RegSetDWord(hk,_T("EnableAutoSkip"),Params.EnableAutoSkip);
     RegSetDWord(hk,_T("FirstFrameTimeout"),Params.FirstFrameTimeout);
     RegSetDWord(hk,_T("FrameTimeout"),Params.FrameTimeout);
@@ -187,6 +189,8 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
         EnableDlgItem(hWndDlg,IDC_FIRSTFRAMETIMEOUT,FALSE);
         EnableDlgItem(hWndDlg,IDC_OTHERFRAMETIMEOUT,FALSE);
       }
+
+      CheckDlgButton(hWndDlg,IDC_FAIRLIGHTHACK,Params.FairlightHack ? BST_CHECKED : BST_UNCHECKED);
 
       HIC codec = ICOpen(ICTYPE_VIDEO,Params.VideoCodec,ICMODE_QUERY);
       SetVideoCodecInfo(hWndDlg,codec);
@@ -274,6 +278,7 @@ static INT_PTR CALLBACK MainDialogProc(HWND hWndDlg,UINT uMsg,WPARAM wParam,LPAR
         Params.MakeSleepsLastOneFrame = IsDlgButtonChecked(hWndDlg,IDC_SLEEPLAST) == BST_CHECKED;
         Params.SleepTimeout = 2500; // yeah, this should be configurable
         Params.NewIntercept = IsDlgButtonChecked(hWndDlg,IDC_NEWINTERCEPT) == BST_CHECKED;
+        Params.FairlightHack = IsDlgButtonChecked(hWndDlg,IDC_FAIRLIGHTHACK) == BST_CHECKED;
         Params.EnableAutoSkip = autoSkip;
 
         // save settings for next time
@@ -489,9 +494,21 @@ static bool PrepareInstrumentation(HANDLE hProcess,BYTE *workArea,TCHAR *dllName
   DetourGenJmp(jumpCode,workArea,entryPoint);
 
   // Finally, write everything into process memory
-  if(!WriteProcessMemory(hProcess,workArea,&buffer,sizeof(buffer),0)
-    || !WriteProcessMemory(hProcess,entryPoint,jumpCode,sizeof(jumpCode),0)
-    || !FlushInstructionCache(hProcess,entryPoint,sizeof(jumpCode)))
+  DWORD oldProtect;
+
+  if(!VirtualProtectEx(hProcess,workArea,sizeof(buffer),PAGE_EXECUTE_READWRITE,&oldProtect))
+    return false;
+
+  if(!WriteProcessMemory(hProcess,workArea,&buffer,sizeof(buffer),0))
+    return false;
+
+  if(!VirtualProtectEx(hProcess,entryPoint,sizeof(jumpCode),PAGE_EXECUTE_READWRITE,&oldProtect))
+    return false;
+    
+  if(!WriteProcessMemory(hProcess,entryPoint,jumpCode,sizeof(jumpCode),0))
+    return false;
+    
+  if(!FlushInstructionCache(hProcess,entryPoint,sizeof(jumpCode)))
     return false;
 
   return true;

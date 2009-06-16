@@ -27,7 +27,7 @@
 			/>
 			<Tool
 				Name="VCCustomBuildTool"
-				CommandLine="copy &quot;$(TargetPath)&quot; &quot;$(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)&quot;"
+				CommandLine="copy &quot;$(TargetPath)&quot; &quot;$(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)&quot;&#x0D;&#x0A;"
 				Outputs="&quot;$(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)&quot;"
 			/>
 			<Tool
@@ -45,7 +45,6 @@
 				AdditionalIncludeDirectories="..\dshow_base"
 				PreprocessorDefinitions="WIN32;_DEBUG;_WINDOWS;_USRDLL;KKAPTUREDLL_EXPORTS;_CRT_SECURE_NO_DEPRECATE"
 				MinimalRebuild="true"
-				ExceptionHandling="0"
 				BasicRuntimeChecks="3"
 				RuntimeLibrary="1"
 				UsePrecompiledHeader="2"
@@ -113,7 +112,7 @@
 			/>
 			<Tool
 				Name="VCCustomBuildTool"
-				CommandLine="copy &quot;$(TargetPath)&quot; &quot;$(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)&quot;"
+				CommandLine="copy &quot;$(TargetPath)&quot; &quot;$(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)&quot;&#x0D;&#x0A;"
 				Outputs="&quot;$(SolutionDir)kkapture\$(ConfigurationName)\$(TargetFileName)&quot;"
 			/>
 			<Tool
