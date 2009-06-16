@@ -1,7 +1,5 @@
 // performance/debug
 
-#include "log.h"
-
 extern DWORD __stdcall Real_timeGetTime();
 
 class VideoCaptureTimer

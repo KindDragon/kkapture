@@ -6,6 +6,11 @@
 
 class VideoEncoder;
 
+// configuration options
+
+// writing AVIs using DShow (please read top of avi_videoencoder_dshow.cpp)
+#define USE_DSHOW_AVI_WRITER      1
+
 // global variables
 extern VideoEncoder *encoder;
 extern float frameRate;

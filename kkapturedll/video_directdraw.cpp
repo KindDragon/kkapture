@@ -117,14 +117,40 @@ class GenericBlitter
     while(--count);
   }
 
+  void Blit32to24(unsigned char *src,unsigned char *dst,int count)
+  {
+    // mmx would be faster, but what the heck...
+    do
+    {
+      *dst++ = *src++;
+      *dst++ = *src++;
+      *dst++ = *src++;
+      src++;
+    }
+    while(--count);
+  }
+
   void BlitOneLine(unsigned char *src,unsigned char *dst,int count)
   {
-    switch(BytesPerPixel)
+    if(BytesPerPixel == 3 && RShift == 16 && RMask == 255 &&
+      GShift == 8 && GMask == 255 && BShift == 0 && BMask == 255)
     {
-    case 1: Blit1ByteSrc(src,dst,count); break;
-    case 2: Blit2ByteSrc(src,dst,count); break;
-    case 3: Blit3ByteSrc(src,dst,count); break;
-    case 4: Blit4ByteSrc(src,dst,count); break;
+      memcpy(dst,src,count*3);
+    }
+    else if(BytesPerPixel == 4 && RShift == 16 && RMask == 255 &&
+      GShift == 8 && GMask == 255 && BShift == 0 && BMask == 255)
+    {
+      Blit32to24(src,dst,count);
+    }
+    else
+    {
+      switch(BytesPerPixel)
+      {
+      case 1: Blit1ByteSrc(src,dst,count); break;
+      case 2: Blit2ByteSrc(src,dst,count); break;
+      case 3: Blit3ByteSrc(src,dst,count); break;
+      case 4: Blit4ByteSrc(src,dst,count); break;
+      }
     }
   }
 
@@ -352,7 +378,7 @@ static void PrimarySurfaceCreated(IUnknown *ddraw,IUnknown *srfp,int ver)
         setCaptureResolution(ddsd.dwWidth,ddsd.dwHeight);
 
       ddsd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
-      ddsd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN;
+      ddsd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
       IDirectDraw *dd = (IDirectDraw *) ddraw;
       if(FAILED(dd->CreateSurface(&ddsd,&BlitSurface,0)))
         printLog("video: could not create blit target\n");
@@ -537,7 +563,7 @@ static HRESULT __stdcall Mine_DDrawSurface2_Flip(IUnknown *me,IUnknown *other,DW
   if(PrimarySurfaceVersion == 2)
     ImplementFlip(me,2);
 
-  return Real_DDrawSurface2_Flip(me,other,flags);
+  return Real_DDrawSurface2_Flip(me,other,flags | DDFLIP_NOVSYNC);
 }
 
 // ---- directdraw 3
@@ -562,7 +588,7 @@ static HRESULT __stdcall Mine_DDrawSurface3_Flip(IUnknown *me,IUnknown *other,DW
   if(PrimarySurfaceVersion == 3)
     ImplementFlip(me,3);
 
-  return Real_DDrawSurface3_Flip(me,other,flags);
+  return Real_DDrawSurface3_Flip(me,other,flags | DDFLIP_NOVSYNC);
 }
 
 // ---- directdraw 4
@@ -605,7 +631,7 @@ static HRESULT __stdcall Mine_DDrawSurface4_Flip(IUnknown *me,IUnknown *other,DW
   if(PrimarySurfaceVersion == 4)
     ImplementFlip(me,4);
 
-  return Real_DDrawSurface4_Flip(me,other,flags);
+  return Real_DDrawSurface4_Flip(me,other,flags | DDFLIP_NOVSYNC);
 }
 
 // ---- directdraw 7
@@ -648,7 +674,7 @@ static HRESULT __stdcall Mine_DDrawSurface7_Flip(IUnknown *me,IUnknown *other,DW
   if(PrimarySurfaceVersion == 7)
     ImplementFlip(me,7);
 
-  return Real_DDrawSurface7_Flip(me,other,flags);
+  return Real_DDrawSurface7_Flip(me,other,flags | DDFLIP_NOVSYNC);
 }
 
 // ---- again, common stuff

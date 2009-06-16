@@ -3,6 +3,9 @@
 
 #include "stdafx.h"
 #include "avi_videoencoder.h"
+#include "video.h"
+
+#if !USE_DSHOW_AVI_WRITER
 
 #pragma comment(lib, "vfw32.lib")
 
@@ -272,3 +275,5 @@ void AVIVideoEncoder::WriteAudioFrame(const void *buffer,int samples)
 
   LeaveCriticalSection(&d->lock);
 }
+
+#endif // !USE_DSHOW_AVI_WRITER

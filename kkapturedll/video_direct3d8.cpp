@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "video.h"
 #include "videoencoder.h"
+#include "videocapturetimer.h"
 
 #include "d3d8.h"
 #pragma comment(lib,"d3d8.lib")

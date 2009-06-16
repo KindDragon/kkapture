@@ -4,7 +4,7 @@
 #include "stdafx.h"
 #include <malloc.h>
 #include "videoencoder.h"
-#include "longarith.h"
+#include "util.h"
 
 #include <dsound.h>
 #pragma comment (lib,"dsound.lib")
@@ -674,6 +674,7 @@ static WaveOutImpl *currentWaveOut = 0;
 
 class WaveOutImpl
 {
+  char MagicCookie[16];
   WAVEFORMATEX Format;
   DWORD_PTR Callback;
   DWORD_PTR CallbackInstance;
@@ -768,6 +769,7 @@ public:
     FirstWriteFrame = -1;
 
     CurrentSamplePos = 0;
+    memcpy(MagicCookie,"kkapture.waveout",16);
 
     callbackMessage(WOM_OPEN,0,0);
   }
@@ -775,6 +777,21 @@ public:
   ~WaveOutImpl()
   {
     callbackMessage(WOM_CLOSE,0,0);
+  }
+
+  bool amIReal() const
+  {
+    bool result = false;
+
+    __try
+    {
+      result = memcmp(MagicCookie,"kkapture.waveout",16) == 0;
+    }
+    __except(EXCEPTION_EXECUTE_HANDLER)
+    {
+    }
+
+    return result;
   }
 
   MMRESULT prepareHeader(WAVEHDR *hdr,UINT size)
@@ -953,6 +970,8 @@ DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutPause(HWAVEOUT hwo), waveOutPau
 DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutRestart(HWAVEOUT hwo), waveOutRestart);
 DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutMessage(HWAVEOUT hwo,UINT uMsg,DWORD_PTR dw1,DWORD_PTR dw2), waveOutMessage);
 DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutGetPosition(HWAVEOUT hwo,LPMMTIME pmmt,UINT cbmmt), waveOutGetPosition);
+DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutGetDevCaps(UINT_PTR uDeviceId,LPWAVEOUTCAPS pwo,UINT cbwoc), waveOutGetDevCaps);
+DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_waveOutGetNumDevs(), waveOutGetNumDevs);
 
 static WaveOutImpl *waveOutLast = 0;
 
@@ -974,6 +993,7 @@ MMRESULT __stdcall Mine_waveOutOpen(LPHWAVEOUT phwo,UINT uDeviceID,LPCWAVEFORMAT
     WaveOutImpl *impl = new WaveOutImpl(pwfx,dwCallback,dwInstance,fdwOpen);
     waveOutLast = impl;
     *phwo = (HWAVEOUT) impl;
+
     return MMSYSERR_NOERROR;
   }
   else
@@ -1034,6 +1054,43 @@ MMRESULT __stdcall Mine_waveOutGetPosition(HWAVEOUT hwo,LPMMTIME pmmt,UINT cbmmt
   return impl ? impl->getPosition(pmmt,cbmmt) : MMSYSERR_INVALHANDLE;
 }
 
+MMRESULT __stdcall Mine_waveOutGetDevCaps(UINT_PTR uDeviceID,LPWAVEOUTCAPS pwoc,UINT cbwoc)
+{
+  WaveOutImpl *impl;
+
+  if(uDeviceID == WAVE_MAPPER || uDeviceID == 0)
+    impl = waveOutLast;
+  else if(uDeviceID < 0x10000)
+    return MMSYSERR_BADDEVICEID;
+  else
+  {
+    impl = (WaveOutImpl *) uDeviceID;
+    if(!impl->amIReal())
+      return MMSYSERR_NODRIVER;
+  }
+
+  if(cbwoc < sizeof(WAVEOUTCAPS))
+    return MMSYSERR_INVALPARAM;
+
+  pwoc->wMid = MM_MICROSOFT;
+  pwoc->wPid = (uDeviceID == WAVE_MAPPER) ? MM_WAVE_MAPPER : MM_MSFT_GENERIC_WAVEOUT;
+  pwoc->vDriverVersion = 0x100;
+  strcpy(pwoc->szPname,".kkapture Audio");
+  pwoc->dwFormats = WAVE_FORMAT_1M08 | WAVE_FORMAT_1M16 | WAVE_FORMAT_1S08 | WAVE_FORMAT_1S16
+    | WAVE_FORMAT_2M08 | WAVE_FORMAT_2M16 | WAVE_FORMAT_2S08 | WAVE_FORMAT_2S16
+    | WAVE_FORMAT_4M08 | WAVE_FORMAT_4M16 | WAVE_FORMAT_4S08 | WAVE_FORMAT_4S16;
+  pwoc->wChannels = 2;
+  pwoc->wReserved1 = 0;
+  pwoc->dwSupport = WAVECAPS_PLAYBACKRATE | WAVECAPS_SAMPLEACCURATE;
+
+  return MMSYSERR_NOERROR;
+}
+
+UINT __stdcall Mine_waveOutGetNumDevs()
+{
+  return 1;
+}
+
 // ----
 
 void initSound()
@@ -1052,6 +1109,8 @@ void initSound()
   DetourFunctionWithTrampoline((PBYTE) Real_waveOutRestart,(PBYTE) Mine_waveOutRestart);
   DetourFunctionWithTrampoline((PBYTE) Real_waveOutMessage,(PBYTE) Mine_waveOutMessage);
   DetourFunctionWithTrampoline((PBYTE) Real_waveOutGetPosition,(PBYTE) Mine_waveOutGetPosition);
+  DetourFunctionWithTrampoline((PBYTE) Real_waveOutGetDevCaps, (PBYTE) Mine_waveOutGetDevCaps);
+  DetourFunctionWithTrampoline((PBYTE) Real_waveOutGetNumDevs, (PBYTE) Mine_waveOutGetNumDevs);
 }
 
 void doneSound()

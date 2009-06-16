@@ -1,3 +1,10 @@
+version 0.04alpha:
+* some performance improvements for directdraw capturing
+* several bugfixes
+* new directshow-based avi writer, currently the only one available (0.04 final will have both the old and new avi writer)
+* automatic audio resampling (required for dshow, currently converts everything to 16bit 44.1kHz stereo)
+* new timing code (not particularly well tested yet!)
+
 version 0.03:
 * waveout capturing finally works (now that was one stupid bug)
 * directdraw/old d3d support (both software and hardware)

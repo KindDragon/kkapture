@@ -12,7 +12,10 @@
 #include <stdarg.h>
 
 #include "main.h"
-#include "vtbl_patch.h"
 #include "sound.h"
 #include "timing.h"
-#include "log.h"
+#include "util.h"
+
+#if USE_DSHOW_AVI_WRITER
+#include "streams.h"
+#endif
