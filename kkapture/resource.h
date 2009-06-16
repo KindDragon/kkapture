@@ -8,8 +8,12 @@
 #define IDC_ARGUMENTS                   1003
 #define IDC_TARGET                      1004
 #define IDC_BTARGET                     1005
-#define IDC_SELCODEC                    1007
 #define IDC_FRAMERATE                   1008
+#define IDC_ENCODER1                    1010
+#define IDC_ENCODER2                    1011
+#define IDC_ACPICK                      1013
+#define IDC_VIDEOCODEC                  1014
+#define IDC_VCPICK                      1015
 
 // Next default values for new objects
 // 
@@ -17,7 +21,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        102
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1010
+#define _APS_NEXT_CONTROL_VALUE         1014
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

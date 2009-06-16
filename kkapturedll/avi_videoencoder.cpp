@@ -4,52 +4,62 @@
 #include "stdafx.h"
 #include "avi_videoencoder.h"
 
+#pragma comment(lib, "vfw32.lib")
+
 // internal data
 struct AVIVideoEncoder::Internal
 {
+  CRITICAL_SECTION lock;
   PAVIFILE file;
   PAVISTREAM vid,vidC;
   PAVISTREAM aud;
+  bool initialized;
 };
 
 void AVIVideoEncoder::Cleanup()
 {
-  printLog("avi: stopped recording\n");
-
-  __try
+  EnterCriticalSection(&d->lock);
+  if(d->initialized)
   {
-    if(d->aud)
+    printLog("avi: stopped recording\n");
+
+    __try
     {
-      AVIStreamRelease(d->aud);
-      d->aud = 0;
+      if(d->aud)
+      {
+        AVIStreamRelease(d->aud);
+        d->aud = 0;
+      }
+
+      if(d->vidC)
+      {
+        AVIStreamRelease(d->vidC);
+        d->vidC = 0;
+      }
+
+      if(d->vid)
+      {
+        AVIStreamRelease(d->vid);
+        d->vid = 0;
+      }
+
+      if(d->file)
+      {
+        AVIFileRelease(d->file);
+        d->file = 0;
+      }
+    }
+    __except(EXCEPTION_EXECUTE_HANDLER)
+    {
+      printLog("avi: exception during avifile shutdown, video may be corrupted\n");
     }
 
-    if(d->vidC)
-    {
-      AVIStreamRelease(d->vidC);
-      d->vidC = 0;
-    }
-
-    if(d->vid)
-    {
-      AVIStreamRelease(d->vid);
-      d->vid = 0;
-    }
-
-    if(d->file)
-    {
-      AVIFileRelease(d->file);
-      d->file = 0;
-    }
+    AVIFileExit();
+    printLog("avi: avifile shutdown complete\n");
+    d->initialized = false;
   }
-  __except(EXCEPTION_EXECUTE_HANDLER)
-  {
-    printLog("avi: exception during avifile shutdown, video may be corrupted\n");
-  }
-
-  AVIFileExit();
-
-  printLog("avi: avifile shutdown complete\n");
+  
+  LeaveCriticalSection(&d->lock);
 }
 
 void AVIVideoEncoder::StartEncode()
@@ -59,6 +69,8 @@ void AVIVideoEncoder::StartEncode()
 
   if(!d->file)
     return;
+
+  EnterCriticalSection(&d->lock);
 
   // set stream format
   ZeroMemory(&bmi,sizeof(bmi));
@@ -80,6 +92,8 @@ void AVIVideoEncoder::StartEncode()
   frame = 0;
 
 cleanup:
+  LeaveCriticalSection(&d->lock);
+
   if(error)
     Cleanup();
 }
@@ -91,6 +105,8 @@ void AVIVideoEncoder::StartAudioEncode(tWAVEFORMATEX *fmt)
 
   if(!d->file)
     return;
+
+  EnterCriticalSection(&d->lock);
 
   // initialize stream info
   ZeroMemory(&asi,sizeof(asi));
@@ -132,35 +148,38 @@ void AVIVideoEncoder::StartAudioEncode(tWAVEFORMATEX *fmt)
   delete[] buffer;
 
 cleanup:
+  LeaveCriticalSection(&d->lock);
+
   if(error)
     Cleanup();
 }
 
-AVIVideoEncoder::AVIVideoEncoder(const char *name,float _fps)
+AVIVideoEncoder::AVIVideoEncoder(const char *name,float _fps,unsigned long codec,unsigned quality)
 {
   AVISTREAMINFO asi;
   AVICOMPRESSOPTIONS aco;
-  AVICOMPRESSOPTIONS *optlist[1];
-  bool gotOptions = false, error = true;
+  bool error = true;
 
   xRes = yRes = 0;
   frame = 0;
   audioSample = 0;
   fps = _fps;
 
-  AVIFileInit();
-
   d = new Internal;
   d->file = 0;
   d->vid = 0;
   d->vidC = 0;
   d->aud = 0;
+  d->initialized = true;
+  InitializeCriticalSection(&d->lock);
+
+  AVIFileInit();
 
   // create avi file
-  if(AVIFileOpen(&d->file,name,OF_WRITE|OF_CREATE,NULL) != AVIERR_OK)
+  if(AVIFileOpen(&d->file,name,OF_CREATE|OF_WRITE,NULL) != AVIERR_OK)
   {
     printLog("AVIFileOpen failed\n");
-    d->file = 0;
+    goto cleanup;
   }
 
   // initialize video stream header
@@ -179,20 +198,16 @@ AVIVideoEncoder::AVIVideoEncoder(const char *name,float _fps)
     goto cleanup;
   }
 
-  // get coding options
+  // create compressed stream
+  if(!codec)
+    codec = mmioFOURCC('D','I','B',' '); // uncompressed frames
+
   ZeroMemory(&aco,sizeof(aco));
   aco.fccType = streamtypeVIDEO;
-  optlist[0] = &aco;
+  aco.fccHandler = codec;
+  aco.dwQuality = quality;
 
-  gotOptions = true;
-  if(!AVISaveOptions(GetForegroundWindow(),0,1,&d->vid,optlist))
-  {
-    printLog("avi: AVISaveOptions failed (video)\n");
-    goto cleanup;
-  }
-
-  // create compressed stream
-  if(AVIMakeCompressedStream(&d->vidC,d->vid,optlist[0],0) != AVIERR_OK)
+  if(AVIMakeCompressedStream(&d->vidC,d->vid,&aco,0) != AVIERR_OK)
   {
     printLog("avi: AVIMakeCompressedStream (video) failed\n");
     goto cleanup;
@@ -201,9 +216,6 @@ AVIVideoEncoder::AVIVideoEncoder(const char *name,float _fps)
   error = false;
 
 cleanup:
-  if(gotOptions)
-    AVISaveOptionsFree(1,optlist);
-
   if(error)
     Cleanup();
 }
@@ -211,6 +223,7 @@ cleanup:
 AVIVideoEncoder::~AVIVideoEncoder()
 {
   Cleanup();
+  DeleteCriticalSection(&d->lock);
   delete d;
 }
 
@@ -225,12 +238,15 @@ void AVIVideoEncoder::SetSize(int _xRes,int _yRes)
 void AVIVideoEncoder::WriteFrame(const unsigned char *buffer)
 {
   // encode the frame
+  EnterCriticalSection(&d->lock);
+
   if(d->vidC)
   {
     AVIStreamWrite(d->vidC,frame,1,(void *)buffer,3*xRes*yRes,0,0,0);
-
     frame++;
   }
+  
+  LeaveCriticalSection(&d->lock);
 }
 
 void AVIVideoEncoder::SetAudioFormat(tWAVEFORMATEX *fmt)
@@ -241,10 +257,14 @@ void AVIVideoEncoder::SetAudioFormat(tWAVEFORMATEX *fmt)
 
 void AVIVideoEncoder::WriteAudioFrame(const void *buffer,int samples)
 {
+  EnterCriticalSection(&d->lock);
+
   if(d->aud)
   {
     AVIStreamWrite(d->aud,audioSample,samples,(LPVOID) buffer,
       samples*audioBytesSample,0,0,0);
     audioSample += samples;
   }
+
+  LeaveCriticalSection(&d->lock);
 }

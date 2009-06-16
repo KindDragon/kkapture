@@ -23,7 +23,7 @@ class AVIVideoEncoder : public VideoEncoder
   void StartAudioEncode(tWAVEFORMATEX *fmt);
 
 public:
-  AVIVideoEncoder(const char *name,float _fps);
+  AVIVideoEncoder(const char *name,float _fps,unsigned long codec,unsigned quality);
   virtual ~AVIVideoEncoder();
 
   virtual void SetSize(int xRes,int yRes);

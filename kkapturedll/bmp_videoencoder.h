@@ -12,13 +12,13 @@ class BMPVideoEncoder : public VideoEncoder
 {
   struct Internal;
   
-  char prefix[256];
+  char prefix[384];
   int xRes,yRes;
   int frame;
   Internal *intn;
 
 public:
-  BMPVideoEncoder(const char *namePrefix);
+  BMPVideoEncoder(const char *fileName);
   virtual ~BMPVideoEncoder();
 
   virtual void SetSize(int xRes,int yRes);
