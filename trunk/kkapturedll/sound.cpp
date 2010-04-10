@@ -1,5 +1,5 @@
 /* kkapture: intrusive demo video capturing.
- * Copyright (c) 2005-2009 Fabian "ryg/farbrausch" Giesen.
+ * Copyright (c) 2005-2010 Fabian "ryg/farbrausch" Giesen.
  *
  * This program is free software; you can redistribute and/or modify it under
  * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
@@ -26,11 +26,17 @@
 #include "util.h"
 #include "video.h"
 #include <psapi.h>
+#define DIRECTSOUND_VERSION 0x0800
 #include <dsound.h>
+
 #pragma comment(lib,"dsound.lib")
 #pragma comment(lib,"dxguid.lib")
 #pragma comment(lib,"winmm.lib")
 #pragma comment(lib,"psapi.lib")
+
+// if waveOutGetPosition is called frequently in a single frame, assume the app is waiting for the
+// current playback position to change and advance the time. this is the threshold for "frequent" calls.
+static const int MAX_GETPOSITION_PER_FRAME = 1024;
 
 // my own directsound fake!
 class MyDirectSound8;
@@ -442,6 +448,15 @@ public:
   virtual HRESULT __stdcall GetCurrentPosition(LPDWORD pdwCurrentPlayCursor,LPDWORD pdwCurrentWriteCursor)
   {
     LockOwner lock(BufferLock);
+
+    if(++GetPosThisFrame >= MAX_GETPOSITION_PER_FRAME) // assume that the app is waiting for the playback position to change.
+    {
+      printLog("sound: app is hammering dsound GetCurrentPosition, advancing time (frame=%d)\n",getFrameTiming());
+      GetPosThisFrame = 0;
+      LeaveCriticalSection(&BufferLock);
+      skipFrame();
+      EnterCriticalSection(&BufferLock);
+    }
 
     // skip some milliseconds of silence at start
     if(SkipAllowed)
@@ -892,8 +907,10 @@ class WaveOutImpl
   bool Paused,InLoop;
   int FirstFrame;
   int FirstWriteFrame;
+  bool FrameInitialized;
   DWORD CurrentBufferPos;
   DWORD CurrentSamplePos;
+  int GetPositionCounter;
 
   void callbackMessage(UINT uMsg,DWORD dwParam1,DWORD dwParam2)
   {
@@ -976,8 +993,10 @@ public:
 
     Paused = false;
     InLoop = false;
-    FirstFrame = -1;
-    FirstWriteFrame = -1;
+    FirstFrame = 0;
+    FirstWriteFrame = 0;
+    FrameInitialized = false;
+    GetPositionCounter = 0;
 
     CurrentSamplePos = 0;
     memcpy(MagicCookie,"kkapture.waveout",16);
@@ -1039,10 +1058,11 @@ public:
       return MMSYSERR_NOERROR;
 
     // enqueue
-    if(FirstFrame == -1) // officially start playback!
+    if(!FrameInitialized) // officially start playback!
     {
       FirstFrame = getFrameTiming();
       FirstWriteFrame = FirstFrame;
+      FrameInitialized = true;
       encoder->SetAudioFormat(Format);
       currentWaveOut = this;
     }
@@ -1086,8 +1106,9 @@ public:
 
     Paused = false;
     InLoop = false;
-    FirstFrame = -1;
-    FirstWriteFrame = -1;
+    FirstFrame = 0;
+    FirstWriteFrame = 0;
+    FrameInitialized = false;
 
     return MMSYSERR_NOERROR;
   }
@@ -1099,9 +1120,16 @@ public:
 
   MMRESULT getPosition(MMTIME *mmt,UINT size)
   {
+    if(++GetPositionCounter >= MAX_GETPOSITION_PER_FRAME) // assume that the app is waiting for the waveout position to change.
+    {
+      printLog("sound: app is hammering waveOutGetPosition, advancing time (frame=%d)\n",getFrameTiming());
+      GetPositionCounter = 0;
+      skipFrame();
+    }
+
     if(!mmt || size < sizeof(MMTIME))
     {
-      printLog("sound: invalid param to getPosition");
+      printLog("sound: invalid param to waveOutGetPosition");
       return MMSYSERR_INVALPARAM;
     }
 
@@ -1123,20 +1151,20 @@ public:
     }
 
     // current frame (offset corrected)
-    DWORD now;
     int relFrame = getFrameTiming() - FirstFrame;
+    DWORD now = UMulDiv(relFrame,Format->nSamplesPerSec * frameRateDenom,frameRateScaled);
 
     // calc time in requested format
     switch(mmt->wType)
     {
     case TIME_BYTES:
-    case TIME_SAMPLES:
     case TIME_MS:
-      now = UMulDiv(relFrame,Format->nSamplesPerSec * frameRateDenom,frameRateScaled);
-      if(mmt->wType == TIME_BYTES || mmt->wType == TIME_MS) // yes, TIME_MS seems to return *bytes*. WHATEVER.
-        mmt->u.cb = now * Format->nBlockAlign;
-      else if(mmt->wType == TIME_SAMPLES)
-        mmt->u.sample = now;
+      // yes, TIME_MS seems to return *bytes*. WHATEVER.
+      mmt->u.cb = now * Format->nBlockAlign;
+      break;
+
+    case TIME_SAMPLES:
+      mmt->u.sample = now;
       break;
     }
 
@@ -1160,6 +1188,8 @@ public:
 
   void processFrame()
   {
+    GetPositionCounter = 0;
+
     // calculate number of samples to write
     int frame = getFrameTiming() - FirstWriteFrame;
     int align = Format->nBlockAlign;
@@ -1323,9 +1353,10 @@ MMRESULT __stdcall Mine_waveOutGetPosition(HWAVEOUT hwo,LPMMTIME pmmt,UINT cbmmt
 
 MMRESULT __stdcall Mine_waveOutGetDevCaps(UINT_PTR uDeviceID,LPWAVEOUTCAPS pwoc,UINT cbwoc)
 {
-  TRACE(("waveOutGetDevCaps(%p,%p,%u)\n",uDeviceID,pwoc,cbwoc));
-
+  static const char deviceName[] = ".kkapture Audio";
   WaveOutImpl *impl;
+
+  TRACE(("waveOutGetDevCaps(%p,%p,%u)\n",uDeviceID,pwoc,cbwoc));
 
   if(uDeviceID == WAVE_MAPPER || uDeviceID == 0)
     impl = waveOutLast;
@@ -1344,7 +1375,7 @@ MMRESULT __stdcall Mine_waveOutGetDevCaps(UINT_PTR uDeviceID,LPWAVEOUTCAPS pwoc,
   pwoc->wMid = MM_MICROSOFT;
   pwoc->wPid = (uDeviceID == WAVE_MAPPER) ? MM_WAVE_MAPPER : MM_MSFT_GENERIC_WAVEOUT;
   pwoc->vDriverVersion = 0x100;
-  strcpy(pwoc->szPname,".kkapture Audio");
+  memcpy(pwoc->szPname,deviceName,sizeof(deviceName));
   pwoc->dwFormats = WAVE_FORMAT_1M08 | WAVE_FORMAT_1M16 | WAVE_FORMAT_1S08 | WAVE_FORMAT_1S16
     | WAVE_FORMAT_2M08 | WAVE_FORMAT_2M16 | WAVE_FORMAT_2S08 | WAVE_FORMAT_2S16
     | WAVE_FORMAT_4M08 | WAVE_FORMAT_4M16 | WAVE_FORMAT_4S08 | WAVE_FORMAT_4S16;
@@ -1363,14 +1394,41 @@ UINT __stdcall Mine_waveOutGetNumDevs()
 
 // ---- BASS
 
+struct BASS_INFO
+{
+  DWORD flags;      // device capabilities (DSCAPS_xxx flags)
+  DWORD hwsize;     // size of total device hardware memory
+  DWORD hwfree;     // size of free device hardware memory
+  DWORD freesam;    // number of free sample slots in the hardware
+  DWORD free3d;     // number of free 3D sample slots in the hardware
+  DWORD minrate;    // min sample rate supported by the hardware
+  DWORD maxrate;    // max sample rate supported by the hardware
+  BOOL eax;         // device supports EAX? (always FALSE if BASS_DEVICE_3D was not used)
+  DWORD minbuf;     // recommended minimum buffer length in ms (requires BASS_DEVICE_LATENCY)
+  DWORD dsver;      // DirectSound version
+  DWORD latency;    // delay (in ms) before start of playback (requires BASS_DEVICE_LATENCY)
+  DWORD initflags;  // BASS_Init "flags" parameter
+  DWORD speakers;   // number of speakers available
+  DWORD freq;       // current output rate (Vista/OSX only)
+};
+
 typedef BOOL (__stdcall *PBASS_INIT)(int device,DWORD freq,DWORD flags,HWND win,GUID *clsid);
+typedef BOOL (__stdcall *PBASS_GETINFO)(BASS_INFO *info);
 
 static PBASS_INIT Real_BASS_Init = 0;
+static PBASS_GETINFO Real_BASS_GetInfo = 0;
 
 static BOOL __stdcall Mine_BASS_Init(int device,DWORD freq,DWORD flags,HWND win,GUID *clsid)
 {
   // for BASS, all we need to do is make sure that the BASS_DEVICE_LATENCY flag is cleared.
   return Real_BASS_Init(device,freq,flags & ~256,win,clsid);
+}
+
+static BOOL __stdcall Mine_BASS_GetInfo(BASS_INFO *info)
+{
+  BOOL res = Real_BASS_GetInfo(info);
+  if(info) info->latency = 0;
+  return res;
 }
 
 static void initSoundsysBASS()
@@ -1379,11 +1437,13 @@ static void initSoundsysBASS()
   if(bassDll)
   {
     PBASS_INIT init = (PBASS_INIT) GetProcAddress(bassDll,"BASS_Init");
+    PBASS_GETINFO getinfo = (PBASS_GETINFO) GetProcAddress(bassDll,"BASS_GetInfo");
 
-    if(init)
+    if(init && getinfo)
     {
       printLog("sound/bass: bass.dll found, BASS support enabled.\n");
       Real_BASS_Init = (PBASS_INIT) DetourFunction((PBYTE) init,(PBYTE) Mine_BASS_Init);
+      Real_BASS_GetInfo = (PBASS_GETINFO) DetourFunction((PBYTE) getinfo,(PBYTE) Mine_BASS_GetInfo);
     }
   }
 }
@@ -1552,10 +1612,14 @@ static void initSoundsysFMOD3()
 
 // ---- FMODEx 4.xx
 
+typedef int (__stdcall *PSYSTEM_INIT)(void *sys,int maxchan,int flags,void *extradriverdata);
+typedef int (__stdcall *PSYSTEM_SETOUTPUT)(void *sys,int output);
 typedef int (__stdcall *PSYSTEM_PLAYSOUND)(void *sys,int index,void *sound,bool paused,void **channel);
 typedef int (__stdcall *PCHANNEL_GETFREQUENCY)(void *chan,float *freq);
 typedef int (__stdcall *PCHANNEL_GETPOSITION)(void *chan,unsigned *position,int posType);
 
+static PSYSTEM_INIT Real_System_init;
+static PSYSTEM_SETOUTPUT Real_System_setOutput;
 static PSYSTEM_PLAYSOUND Real_System_playSound;
 static PCHANNEL_GETFREQUENCY Real_Channel_getFrequency;
 static PCHANNEL_GETPOSITION Real_Channel_getPosition;
@@ -1574,6 +1638,13 @@ struct FMODExSoundDesc
 
 static const int FMODExNumSounds = 16; // max # of active (playing) sounds supported
 static FMODExSoundDesc FMODExSounds[FMODExNumSounds];
+
+static int __stdcall Mine_System_init(void *sys,int maxchan,int flags,void *extradriverdata)
+{
+  // force output type to be dsound (mainly so i don't have to write a windows audio session implementation for vista)
+  Real_System_setOutput(sys,6); // 6=DirectSound
+  return Real_System_init(sys,maxchan,flags,extradriverdata);
+}
 
 static int __stdcall Mine_System_playSound(void *sys,int index,void *sound,bool paused,void **channel)
 {
@@ -1654,6 +1725,8 @@ static void initSoundsysFMODEx()
 
       printLog("sound/fmodex: fmodex.dll found, FMODEx support enabled.\n");
 
+      Real_System_init = (PSYSTEM_INIT) DetourFunction((PBYTE) GetProcAddress(fmodDll,"?init@System@FMOD@@QAG?AW4FMOD_RESULT@@HIPAX@Z"),(PBYTE) Mine_System_init);
+      Real_System_setOutput = (PSYSTEM_SETOUTPUT) GetProcAddress(fmodDll,"?setOutput@System@FMOD@@QAG?AW4FMOD_RESULT@@W4FMOD_OUTPUTTYPE@@@Z");
       Real_System_playSound = (PSYSTEM_PLAYSOUND) DetourFunction((PBYTE) GetProcAddress(fmodDll,"?playSound@System@FMOD@@QAG?AW4FMOD_RESULT@@W4FMOD_CHANNELINDEX@@PAVSound@2@_NPAPAVChannel@2@@Z"),(PBYTE) Mine_System_playSound);
       Real_Channel_getFrequency = (PCHANNEL_GETFREQUENCY) GetProcAddress(fmodDll,"?getFrequency@Channel@FMOD@@QAG?AW4FMOD_RESULT@@PAM@Z");
       Real_Channel_getPosition = (PCHANNEL_GETPOSITION) DetourFunction((PBYTE) GetProcAddress(fmodDll,"?getPosition@Channel@FMOD@@QAG?AW4FMOD_RESULT@@PAII@Z"),(PBYTE) Mine_Channel_getPosition);

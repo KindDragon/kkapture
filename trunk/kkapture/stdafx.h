@@ -1,5 +1,5 @@
 /* kkapture: intrusive demo video capturing.
- * Copyright (c) 2005-2009 Fabian "ryg/farbrausch" Giesen.
+ * Copyright (c) 2005-2010 Fabian "ryg/farbrausch" Giesen.
  *
  * This program is free software; you can redistribute and/or modify it under
  * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
@@ -25,5 +25,3 @@
 #define _WIN32_WINNT 0x0400
 #include <windows.h>
 #include <vfw.h>
-#define DETOURS_INTERNAL
-#include "detours.h"
