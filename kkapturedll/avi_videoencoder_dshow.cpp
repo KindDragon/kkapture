@@ -46,11 +46,11 @@
 
 #pragma comment(lib,"vfw32.lib")
 
-#ifdef NDEBUG
-#pragma comment(lib,"../dshow_base/strmbase_r.lib")
-#else
-#pragma comment(lib,"../dshow_base/strmbase_d.lib")
-#endif
+//#ifdef NDEBUG
+//#pragma comment(lib,"../dshow_base/strmbase_r.lib")
+//#else
+//#pragma comment(lib,"../dshow_base/strmbase_d.lib")
+//#endif
 
 // ---- dshow filters (aaargh!!)
 

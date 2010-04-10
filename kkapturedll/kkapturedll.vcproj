@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="Windows-1252"?>
 <VisualStudioProject
 	ProjectType="Visual C++"
-	Version="8,00"
+	Version="9,00"
 	Name="kkapturedll"
 	ProjectGUID="{8212119F-DBE1-4DA5-80A9-67FDE9A4CBD3}"
 	Keyword="Win32Proj"
+	TargetFrameworkVersion="131072"
 	>
 	<Platforms>
 		<Platform
@@ -42,7 +43,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories="..\dshow_base;..\deps"
+				AdditionalIncludeDirectories="..\dshow_base;..\deps;..\detours;..\d3d8\include"
 				PreprocessorDefinitions="WIN32;_DEBUG;_WINDOWS;_USRDLL;KKAPTUREDLL_EXPORTS;_CRT_SECURE_NO_DEPRECATE"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
@@ -66,12 +67,14 @@
 				AdditionalDependencies="detours.lib gdi32.lib"
 				OutputFile="$(OutDir)/kkapturedll.dll"
 				LinkIncremental="1"
-				AdditionalLibraryDirectories="..\deps"
+				AdditionalLibraryDirectories="..\deps;..\detours;..\d3d8\lib"
 				GenerateDebugInformation="true"
 				ProgramDatabaseFile="$(OutDir)/kkapturedll.pdb"
 				SubSystem="2"
 				OptimizeReferences="1"
 				EnableCOMDATFolding="1"
+				RandomizedBaseAddress="1"
+				DataExecutionPrevention="0"
 				ImportLibrary="$(OutDir)/kkapturedll.lib"
 				TargetMachine="1"
 			/>
@@ -92,9 +95,6 @@
 			/>
 			<Tool
 				Name="VCAppVerifierTool"
-			/>
-			<Tool
-				Name="VCWebDeploymentTool"
 			/>
 			<Tool
 				Name="VCPostBuildEventTool"
@@ -128,7 +128,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="2"
-				AdditionalIncludeDirectories="..\dshow_base;..\deps"
+				AdditionalIncludeDirectories="..\dshow_base;..\deps;..\detours;..\d3d8\include"
 				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;_USRDLL;KKAPTUREDLL_EXPORTS;_CRT_SECURE_NO_DEPRECATE"
 				RuntimeLibrary="0"
 				UsePrecompiledHeader="2"
@@ -150,11 +150,13 @@
 				AdditionalDependencies="detours.lib"
 				OutputFile="$(OutDir)/kkapturedll.dll"
 				LinkIncremental="1"
-				AdditionalLibraryDirectories="..\deps"
+				AdditionalLibraryDirectories="..\deps;..\detours;..\d3d8\lib"
 				GenerateDebugInformation="true"
 				SubSystem="2"
 				OptimizeReferences="2"
 				EnableCOMDATFolding="2"
+				RandomizedBaseAddress="1"
+				DataExecutionPrevention="0"
 				ImportLibrary="$(OutDir)/kkapturedll.lib"
 				TargetMachine="1"
 			/>
@@ -175,9 +177,6 @@
 			/>
 			<Tool
 				Name="VCAppVerifierTool"
-			/>
-			<Tool
-				Name="VCWebDeploymentTool"
 			/>
 			<Tool
 				Name="VCPostBuildEventTool"

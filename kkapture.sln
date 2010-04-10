@@ -1,11 +1,16 @@
-Microsoft Visual Studio Solution File, Format Version 9.00
-# Visual Studio 2005
+Microsoft Visual Studio Solution File, Format Version 10.00
+# Visual Studio 2008
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "kkapturedll", "kkapturedll\kkapturedll.vcproj", "{8212119F-DBE1-4DA5-80A9-67FDE9A4CBD3}"
+	ProjectSection(ProjectDependencies) = postProject
+		{E8A3F6FA-AE1C-4C8E-A0B6-9C8480324EAA} = {E8A3F6FA-AE1C-4C8E-A0B6-9C8480324EAA}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "kkapture", "kkapture\kkapture.vcproj", "{DBA35513-DE77-4FE9-8B71-C483946E76FF}"
 	ProjectSection(ProjectDependencies) = postProject
 		{8212119F-DBE1-4DA5-80A9-67FDE9A4CBD3} = {8212119F-DBE1-4DA5-80A9-67FDE9A4CBD3}
 	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BaseClasses", "dshow_base\baseclasses.vcproj", "{E8A3F6FA-AE1C-4C8E-A0B6-9C8480324EAA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +26,10 @@ Global
 		{DBA35513-DE77-4FE9-8B71-C483946E76FF}.Debug|Win32.Build.0 = Debug|Win32
 		{DBA35513-DE77-4FE9-8B71-C483946E76FF}.Release|Win32.ActiveCfg = Release|Win32
 		{DBA35513-DE77-4FE9-8B71-C483946E76FF}.Release|Win32.Build.0 = Release|Win32
+		{E8A3F6FA-AE1C-4C8E-A0B6-9C8480324EAA}.Debug|Win32.ActiveCfg = Debug|Win32
+		{E8A3F6FA-AE1C-4C8E-A0B6-9C8480324EAA}.Debug|Win32.Build.0 = Debug|Win32
+		{E8A3F6FA-AE1C-4C8E-A0B6-9C8480324EAA}.Release|Win32.ActiveCfg = Release|Win32
+		{E8A3F6FA-AE1C-4C8E-A0B6-9C8480324EAA}.Release|Win32.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

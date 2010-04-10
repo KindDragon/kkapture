@@ -20,29 +20,31 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#pragma once
+#ifndef __INTERCEPT_H__
+#define __INTERCEPT_H__
 
-#define _WIN32_WINNT 0x0400
+#ifdef _USRDLL
+#define DLLEXPORT __declspec(dllexport)
+#else
+#define DLLEXPORT __declspec(dllimport)
+#endif
 
-#include <hash_map>
+enum ErrorCodes
+{
+  ERR_OK = 0,
+  ERR_INSTRUMENTATION_FAILED,
+  ERR_COULDNT_FIND_ENTRY_POINT,
+  ERR_COULDNT_EXECUTE
+};
 
-#include <windows.h>
-#define DETOURS_INTERNAL
-#include "detours.h"
+extern "C" DLLEXPORT int CreateInstrumentedProcessA(BOOL newIntercept,LPCSTR appName,LPSTR cmdLine,
+  LPSECURITY_ATTRIBUTES processAttr,LPSECURITY_ATTRIBUTES threadAttr,BOOL inheritHandles,DWORD flags,
+  LPVOID env,LPCSTR currentDir,LPSTARTUPINFO startupInfo,LPPROCESS_INFORMATION pi);
 
-#include <vfw.h>
+extern "C" DLLEXPORT int CreateInstrumentedProcessW(BOOL newIntercept,LPCWSTR appName,LPWSTR cmdLine,
+  LPSECURITY_ATTRIBUTES processAttr,LPSECURITY_ATTRIBUTES threadAttr,BOOL inheritHandles,DWORD flags,
+  LPVOID env,LPCWSTR currentDir,LPSTARTUPINFOW startupInfo,LPPROCESS_INFORMATION pi);
 
-#include <stdio.h>
-#include <stdarg.h>
-#include <tchar.h>
-#include <process.h>
-#include <intrin.h>
+void initProcessIntercept();
 
-#include "main.h"
-#include "sound.h"
-#include "timing.h"
-#include "util.h"
-
-#if USE_DSHOW_AVI_WRITER
-#include "streams.h"
 #endif
