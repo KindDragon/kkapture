@@ -1,5 +1,5 @@
 /* kkapture: intrusive demo video capturing.
- * Copyright (c) 2005-2009 Fabian "ryg/farbrausch" Giesen.
+ * Copyright (c) 2005-2010 Fabian "ryg/farbrausch" Giesen.
  *
  * This program is free software; you can redistribute and/or modify it under
  * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
@@ -57,12 +57,17 @@ DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_timeSetEvent(UINT uDelay,UINT uResolut
 DETOUR_TRAMPOLINE(MMRESULT __stdcall Real_timeKillEvent(UINT uTimerID), timeKillEvent);
 DETOUR_TRAMPOLINE(UINT_PTR __stdcall Real_SetTimer(HWND hWnd,UINT_PTR uIDEvent,UINT uElapse,TIMERPROC lpTimerFunc), SetTimer);
 
+// if timer functions are called frequently in a single frame, assume the app is waiting for the
+// current time to change and advance it. this is the threshold for "frequent" calls.
+static const LONG MAX_TIMERQUERY_PER_FRAME = 16384;
+
 // timer seeds
 static bool TimersSeeded = false;
 static CRITICAL_SECTION TimerSeedLock;
 static LARGE_INTEGER firstTimeQPC;
 static DWORD firstTimeTGT;
 static FILETIME firstTimeGSTAFT;
+static volatile LONG timerHammeringCounter = 0;
 
 static void seedAllTimers()
 {
@@ -85,23 +90,32 @@ static void seedAllTimers()
   }
 }
 
+static int getFrameTimingAndSeed()
+{
+  if(InterlockedIncrement(&timerHammeringCounter) == MAX_TIMERQUERY_PER_FRAME)
+  {
+    printLog("timing: application is hammering timer calls, advancing time. (frame = %d)\n",getFrameTiming());
+    skipFrame();
+  }
+
+  int frame = getFrameTiming();
+  seedAllTimers();
+  return frame;
+}
+
 // actual timing functions
 
 BOOL __stdcall Mine_QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency)
 {
   if(lpFrequency)
     lpFrequency->QuadPart = perfFrequency;
-  //if(!IsBadWritePtr(lpFrequency,sizeof(LARGE_INTEGER)))
-  //  lpFrequency->QuadPart = perfFrequency;
 
   return TRUE;
 }
 
 BOOL __stdcall Mine_QueryPerformanceCounter(LARGE_INTEGER *lpCounter)
 {
-  int frame = getFrameTiming();
-  seedAllTimers();
-
+  int frame = getFrameTimingAndSeed();
   if(lpCounter)
     lpCounter->QuadPart = firstTimeQPC.QuadPart + ULongMulDiv(perfFrequency,frame*frameRateDenom,frameRateScaled);
 
@@ -111,17 +125,13 @@ BOOL __stdcall Mine_QueryPerformanceCounter(LARGE_INTEGER *lpCounter)
 DWORD __stdcall Mine_GetTickCount()
 {
   // before the first frame is finished, time still progresses normally
-  int frame = getFrameTiming();
-  seedAllTimers();
-
+  int frame = getFrameTimingAndSeed();
   return firstTimeTGT + UMulDiv(frame,1000*frameRateDenom,frameRateScaled);
 }
 
 DWORD __stdcall Mine_timeGetTime()
 {
-  int frame = getFrameTiming();
-  seedAllTimers();
-
+  int frame = getFrameTimingAndSeed();
   return firstTimeTGT + UMulDiv(frame,1000*frameRateDenom,frameRateScaled);
 }
 
@@ -132,8 +142,7 @@ MMRESULT __stdcall Mine_timeGetSystemTime(MMTIME *pmmt,UINT cbmmt)
 
 void __stdcall Mine_GetSystemTimeAsFileTime(FILETIME *time)
 {
-  int frame = getFrameTiming();
-  seedAllTimers();
+  int frame = getFrameTimingAndSeed();
 
   LONGLONG baseTime = *((LONGLONG *) &firstTimeGSTAFT);
   LONGLONG elapsedSince = ULongMulDiv(10000000,frame * frameRateDenom,frameRateScaled);
@@ -319,7 +328,7 @@ DWORD __stdcall Mine_WaitForSingleObject(HANDLE hHandle,DWORD dwMilliseconds)
 DWORD __stdcall Mine_WaitForMultipleObjects(DWORD nCount,CONST HANDLE *lpHandles,BOOL bWaitAll,DWORD dwMilliseconds)
 {
   // infinite waits are always passed through
-  if(dwMilliseconds <= 0x7fffffff)
+  if(dwMilliseconds >= 0x7fffffff)
     return Real_WaitForMultipleObjects(nCount,lpHandles,bWaitAll,dwMilliseconds);
   else
   {
@@ -351,7 +360,7 @@ DWORD __stdcall Mine_WaitForMultipleObjects(DWORD nCount,CONST HANDLE *lpHandles
 DWORD __stdcall Mine_MsgWaitForMultipleObjects(DWORD nCount,CONST HANDLE *lpHandles,BOOL bWaitAll,DWORD dwMilliseconds,DWORD dwWakeMask)
 {
   // infinite waits are always passed through
-  if(dwMilliseconds <= 0x7fffffff)
+  if(dwMilliseconds >= 0x7fffffff)
     return Real_MsgWaitForMultipleObjects(nCount,lpHandles,bWaitAll,dwMilliseconds,dwWakeMask);
   else
   {
@@ -400,7 +409,7 @@ static unsigned int __stdcall stuckThreadProc(void *arg)
   return 0;
 }
 
-void initTiming()
+void initTiming(bool interceptAnything)
 {
   timeBeginPeriod(1);
 
@@ -418,19 +427,22 @@ void initTiming()
   QueryPerformanceFrequency(&freq);
   perfFrequency = freq.QuadPart;
 
-  DetourFunctionWithTrampoline((PBYTE) Real_QueryPerformanceFrequency, (PBYTE) Mine_QueryPerformanceFrequency);
-  DetourFunctionWithTrampoline((PBYTE) Real_QueryPerformanceCounter, (PBYTE) Mine_QueryPerformanceCounter);
-  DetourFunctionWithTrampoline((PBYTE) Real_GetTickCount, (PBYTE) Mine_GetTickCount);
-  DetourFunctionWithTrampoline((PBYTE) Real_timeGetTime, (PBYTE) Mine_timeGetTime);
-  DetourFunctionWithTrampoline((PBYTE) Real_Sleep, (PBYTE) Mine_Sleep);
-  DetourFunctionWithTrampoline((PBYTE) Real_WaitForSingleObject, (PBYTE) Mine_WaitForSingleObject);
-  DetourFunctionWithTrampoline((PBYTE) Real_WaitForMultipleObjects, (PBYTE) Mine_WaitForMultipleObjects);
-  DetourFunctionWithTrampoline((PBYTE) Real_MsgWaitForMultipleObjects, (PBYTE) Mine_MsgWaitForMultipleObjects);
-  DetourFunctionWithTrampoline((PBYTE) Real_GetSystemTimeAsFileTime, (PBYTE) Mine_GetSystemTimeAsFileTime);
-  DetourFunctionWithTrampoline((PBYTE) Real_GetSystemTime, (PBYTE) Mine_GetSystemTime);
-  DetourFunctionWithTrampoline((PBYTE) Real_timeSetEvent, (PBYTE) Mine_timeSetEvent);
-  DetourFunctionWithTrampoline((PBYTE) Real_timeKillEvent, (PBYTE) Mine_timeKillEvent);
-  DetourFunctionWithTrampoline((PBYTE) Real_SetTimer, (PBYTE) Mine_SetTimer);
+  if(interceptAnything)
+  {
+    DetourFunctionWithTrampoline((PBYTE) Real_QueryPerformanceFrequency, (PBYTE) Mine_QueryPerformanceFrequency);
+    DetourFunctionWithTrampoline((PBYTE) Real_QueryPerformanceCounter, (PBYTE) Mine_QueryPerformanceCounter);
+    DetourFunctionWithTrampoline((PBYTE) Real_GetTickCount, (PBYTE) Mine_GetTickCount);
+    DetourFunctionWithTrampoline((PBYTE) Real_timeGetTime, (PBYTE) Mine_timeGetTime);
+    DetourFunctionWithTrampoline((PBYTE) Real_Sleep, (PBYTE) Mine_Sleep);
+    DetourFunctionWithTrampoline((PBYTE) Real_WaitForSingleObject, (PBYTE) Mine_WaitForSingleObject);
+    DetourFunctionWithTrampoline((PBYTE) Real_WaitForMultipleObjects, (PBYTE) Mine_WaitForMultipleObjects);
+    DetourFunctionWithTrampoline((PBYTE) Real_MsgWaitForMultipleObjects, (PBYTE) Mine_MsgWaitForMultipleObjects);
+    DetourFunctionWithTrampoline((PBYTE) Real_GetSystemTimeAsFileTime, (PBYTE) Mine_GetSystemTimeAsFileTime);
+    DetourFunctionWithTrampoline((PBYTE) Real_GetSystemTime, (PBYTE) Mine_GetSystemTime);
+    DetourFunctionWithTrampoline((PBYTE) Real_timeSetEvent, (PBYTE) Mine_timeSetEvent);
+    DetourFunctionWithTrampoline((PBYTE) Real_timeKillEvent, (PBYTE) Mine_timeKillEvent);
+    DetourFunctionWithTrampoline((PBYTE) Real_SetTimer, (PBYTE) Mine_SetTimer);
+  }
 
   stuckThread = (HANDLE) _beginthreadex(0,0,stuckThreadProc,0,0,0);
 }
@@ -473,6 +485,7 @@ void doneTiming()
   DetourRemove((PBYTE) Real_Sleep, (PBYTE) Mine_Sleep);
   DetourRemove((PBYTE) Real_WaitForSingleObject, (PBYTE) Mine_WaitForSingleObject);
   DetourRemove((PBYTE) Real_WaitForMultipleObjects, (PBYTE) Mine_WaitForMultipleObjects);
+  DetourRemove((PBYTE) Real_MsgWaitForMultipleObjects, (PBYTE) Mine_MsgWaitForMultipleObjects);
 
   CloseHandle(nextFrameEvent);
   CloseHandle(resyncEvent);
@@ -506,9 +519,6 @@ void resetTiming()
 
 void nextFrameTiming()
 {
-  /*SetEvent(nextFrameEvent);
-  Real_Sleep(5);*/
-
   ResetEvent(resyncEvent);
   SetEvent(nextFrameEvent);
   if(waitCounter)
@@ -522,8 +532,6 @@ void nextFrameTiming()
 
   ResetEvent(nextFrameEvent);
   SetEvent(resyncEvent);
-  
-  //Real_Sleep(5);
 
   DWORD oldFrameTime = UMulDiv(currentFrame,1000*frameRateDenom,frameRateScaled);
   DWORD newFrameTime = UMulDiv(currentFrame+1,1000*frameRateDenom,frameRateScaled);
@@ -549,6 +557,7 @@ void nextFrameTiming()
   // (some old hjb intros stop when there's no new messages)
   PostMessage(GetForegroundWindow(),WM_NULL,0,0);
   currentFrame++;
+  timerHammeringCounter = 0;
 }
 
 int getFrameTiming()

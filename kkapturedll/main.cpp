@@ -1,5 +1,5 @@
 /* kkapture: intrusive demo video capturing.
- * Copyright (c) 2005-2009 Fabian "ryg/farbrausch" Giesen.
+ * Copyright (c) 2005-2010 Fabian "ryg/farbrausch" Giesen.
  *
  * This program is free software; you can redistribute and/or modify it under
  * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
@@ -27,15 +27,16 @@
 
 #include "video.h"
 #include "videoencoder.h"
+#include "intercept.h"
 
 VideoEncoder *encoder = 0;
 int frameRateScaled = 1000, frameRateDenom = 100;
 bool exitNextFrame = false;
 ParameterBlock params;
+void *hModule = 0;
 
 static CRITICAL_SECTION shuttingDown;
 static bool initialized = false;
-static HMODULE hModule = 0;
 static HHOOK hKeyHook = 0;
 static HANDLE hHookThread = 0;
 static DWORD HookThreadId = 0;
@@ -81,7 +82,7 @@ static void __cdecl HookThreadProc(void *arg)
   HookThreadId = GetCurrentThreadId();
 
   // install the hook
-  hKeyHook = SetWindowsHookEx(WH_KEYBOARD_LL,LLKeyboardHook,hModule,0);
+  hKeyHook = SetWindowsHookEx(WH_KEYBOARD_LL,LLKeyboardHook,(HINSTANCE) hModule,0);
   if(!hKeyHook)
     printLog("main: couldn't install keyboard hook\n");
 
@@ -156,7 +157,7 @@ static void done()
         CloseHandle(hToken);
       }
       else
-        printLog("main: couldn't aquire process token, can't power off.\n");
+        printLog("main: couldn't acquire process token, can't power off.\n");
     }
 
     closeLog();
@@ -170,6 +171,9 @@ static void done()
 static void init()
 {
   bool error = true;
+  HANDLE hMapping = OpenFileMapping(FILE_MAP_READ,FALSE,_T("__kkapture_parameter_block"));
+  if(hMapping == 0) // no parameter block available.
+    return;
 
   InitializeCriticalSection(&shuttingDown);
 
@@ -179,24 +183,20 @@ static void init()
   memset(&params,0,sizeof(params));
 
   // get file mapping containing capturing info
-  HANDLE hMapping = OpenFileMapping(FILE_MAP_READ,FALSE,_T("__kkapture_parameter_block"));
-  if(hMapping != INVALID_HANDLE_VALUE)
+  ParameterBlock *block = (ParameterBlock *) MapViewOfFile(hMapping,FILE_MAP_READ,0,0,sizeof(ParameterBlock));
+  if(block)
   {
-    ParameterBlock *block = (ParameterBlock *) MapViewOfFile(hMapping,FILE_MAP_READ,0,0,sizeof(ParameterBlock));
-    if(block)
+    // correct version
+    if(block->VersionTag == PARAMVERSION)
     {
-      // correct version
-      if(block->VersionTag == PARAMVERSION)
-      {
-        memcpy(&params,block,sizeof(params));
-        error = false;
-      }
-
-      UnmapViewOfFile(block);
+      memcpy(&params,block,sizeof(params));
+      error = false;
     }
 
-    CloseHandle(hMapping);
+    UnmapViewOfFile(block);
   }
+
+  CloseHandle(hMapping);
 
   // if kkapture is being debugged, wait for the user to attach the debugger to this process
   if(params.IsDebugged)
@@ -241,14 +241,15 @@ static void init()
   }
 
   // rest of initialization code
-  initTiming();
+  initTiming(true);
   initVideo();
   initSound();
+  initProcessIntercept();
   printLog("main: all main components initialized.\n");
 
   if(error)
   {
-    printLog("main: couldn't access parameter block or wrong version");
+    printLog("main: couldn't access parameter block or wrong version\n");
 
     frameRateScaled = 1000;
     frameRateDenom = 100;

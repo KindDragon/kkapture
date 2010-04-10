@@ -1,5 +1,5 @@
 /* kkapture: intrusive demo video capturing.
- * Copyright (c) 2005-2009 Fabian "ryg/farbrausch" Giesen.
+ * Copyright (c) 2005-2010 Fabian "ryg/farbrausch" Giesen.
  *
  * This program is free software; you can redistribute and/or modify it under
  * the terms of the Artistic License, Version 2.0beta5, or (at your opinion)
@@ -156,9 +156,6 @@ void AVIVideoEncoderVFW::Cleanup()
     d->resampleBuf = 0;
     d->resampleSize = 0;
 
-    delete[] (unsigned char*) d->wfx;
-    delete[] (unsigned char*) d->targetFormat;
-
     AVIFileExit();
     printLog("avi_vfw: avifile shutdown complete\n");
     d->initialized = false;
@@ -308,6 +305,9 @@ AVIVideoEncoderVFW::~AVIVideoEncoderVFW()
 {
   Cleanup();
   DeleteCriticalSection(&d->lock);
+  delete[] (unsigned char*) d->wfx;
+  delete[] (unsigned char*) d->targetFormat;
+
   delete d;
 }
 
