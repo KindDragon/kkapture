@@ -216,6 +216,14 @@
 				>
 			</File>
 			<File
+				RelativePath=".\bltutils.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\bltutils.h"
+				>
+			</File>
+			<File
 				RelativePath=".\bmp_videoencoder.cpp"
 				>
 			</File>
@@ -253,6 +261,38 @@
 			</File>
 			<File
 				RelativePath=".\sound.h"
+				>
+			</File>
+			<File
+				RelativePath=".\sound_bass.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\sound_bass.h"
+				>
+			</File>
+			<File
+				RelativePath=".\sound_directsound.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\sound_directsound.h"
+				>
+			</File>
+			<File
+				RelativePath=".\sound_fmod.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\sound_fmod.h"
+				>
+			</File>
+			<File
+				RelativePath=".\sound_waveout.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\sound_waveout.h"
 				>
 			</File>
 			<File

@@ -103,6 +103,7 @@ static void LoadSettingsFromRegistry()
   Params.Encoder = (EncoderType) RegQueryDWord(hk,_T("VideoEncoder"),AVIEncoderVFW);
   Params.VideoCodec = RegQueryDWord(hk,_T("AVIVideoCodec"),mmioFOURCC('D','I','B',' '));
   Params.VideoQuality = RegQueryDWord(hk,_T("AVIVideoQuality"),ICQUALITY_DEFAULT);
+  Params.DestBpp = 3;
   Params.NewIntercept = TRUE; // always use new interception now.
   Params.SoundsysInterception = RegQueryDWord(hk,_T("SoundsysInterception"),1);
   Params.EnableAutoSkip = RegQueryDWord(hk,_T("EnableAutoSkip"),0);
@@ -126,6 +127,7 @@ static void SaveSettingsToRegistry()
     RegSetDWord(hk,_T("VideoEncoder"),Params.Encoder);
     RegSetDWord(hk,_T("AVIVideoCodec"),Params.VideoCodec);
     RegSetDWord(hk,_T("AVIVideoQuality"),Params.VideoQuality);
+    RegSetDWord(hk,_T("AVIVideoBpp"),Params.DestBpp);
     RegSetDWord(hk,_T("NewIntercept"),Params.NewIntercept);
     RegSetDWord(hk,_T("SoundsysInterception"),Params.SoundsysInterception);
     RegSetDWord(hk,_T("EnableAutoSkip"),Params.EnableAutoSkip);

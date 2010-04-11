@@ -28,12 +28,12 @@
 static void captureGDIFrame(unsigned char *buffer, int xres, int yres, CONST BITMAPINFO *bmi)
 {
   setCaptureResolution(xres,yres);
-  if(!captureData || !encoder)
+  if(!captureBuffer.data || !encoder)
     return;
 
   GenericBlitter blit;
   int srcPitch = ((bmi->bmiHeader.biBitCount + 7) / 8) * bmi->bmiHeader.biWidth;
-  int dstPitch = captureWidth * 3;
+  int dstPitch = captureBuffer.width * params.DestBpp;
 
   printLog("video: captureGDIFrame xres=%d yres=%d srcPitch=%d dstPitch=%d\n",
     xres,yres,srcPitch,dstPitch);
@@ -70,14 +70,14 @@ static void captureGDIFrame(unsigned char *buffer, int xres, int yres, CONST BIT
   bool flip = bmi->bmiHeader.biHeight < 0;
   for(int y=0;y<yres;y++)
   {
-    unsigned char *dst = captureData + (flip ? (yres-1-y) : y) * dstPitch;
+    unsigned char *dst = captureBuffer.data + (flip ? (yres-1-y) : y) * dstPitch;
     unsigned char *src = buffer + y * srcPitch;
 
     blit.BlitOneLine(src,dst,xres);
   }
 
   // encode
-  encoder->WriteFrame(captureData);
+  encoder->WriteFrame(captureBuffer.data);
 }
 
   // heuristic: if it's smaller than a certain size, we're not interested.

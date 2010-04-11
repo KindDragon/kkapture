@@ -22,6 +22,7 @@
 
 #include "stdafx.h"
 #include "bmp_videoencoder.h"
+#include "bltutils.h"
 
 // internal data
 struct BMPVideoEncoder::Internal
@@ -53,7 +54,7 @@ BMPVideoEncoder::BMPVideoEncoder(const char *fileName)
 
   intn->bmih.biSize = sizeof(BITMAPINFOHEADER);
   intn->bmih.biPlanes = 1;
-  intn->bmih.biBitCount = 24;
+  intn->bmih.biBitCount = params.DestBpp * 8;
   intn->bmih.biCompression = BI_RGB;
 }
 
@@ -84,7 +85,7 @@ void BMPVideoEncoder::SetSize(int _xRes,int _yRes)
   xRes = _xRes;
   yRes = _yRes;
 
-  intn->bmfh.bfSize = xRes * yRes * 3 + intn->bmfh.bfOffBits;
+  intn->bmfh.bfSize = xRes * yRes * params.DestBpp + intn->bmfh.bfOffBits;
   intn->bmih.biWidth = xRes;
   intn->bmih.biHeight = yRes;
 
@@ -103,7 +104,7 @@ void BMPVideoEncoder::WriteFrame(const unsigned char *buffer)
     FILE *f = fopen(filename,"wb");
     fwrite(&intn->bmfh,sizeof(BITMAPFILEHEADER),1,f);
     fwrite(&intn->bmih,sizeof(BITMAPINFOHEADER),1,f);
-    fwrite(buffer,xRes*yRes,3,f);
+    fwrite(buffer,xRes*yRes,params.DestBpp,f);
     fclose(f);
 
     // frame is finished.

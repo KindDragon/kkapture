@@ -20,41 +20,51 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __VIDEO_H__
-#define __VIDEO_H__
+#ifndef __SOUND_WAVEOUT_H__
+#define __SOUND_WAVEOUT_H__
 
-#include "bltutils.h"
-
-class VideoEncoder;
-
-class VideoCaptureDataLock
+class WaveOutImpl
 {
+  char MagicCookie[16];
+  WAVEFORMATEX *Format;
+  DWORD_PTR Callback;
+  DWORD_PTR CallbackInstance;
+  DWORD OpenFlags;
+  WAVEHDR *Head,*Current,*Tail;
+  bool Paused,InLoop;
+  int FirstFrame;
+  int FirstWriteFrame;
+  bool FrameInitialized;
+  DWORD CurrentBufferPos;
+  DWORD CurrentSamplePos;
+  int GetPositionCounter;
+
+  void callbackMessage(UINT uMsg,DWORD dwParam1,DWORD dwParam2);
+  void doneBuffer();
+  void advanceBuffer();
+  void processCurrentBuffer();
+
 public:
-  VideoCaptureDataLock();
-  ~VideoCaptureDataLock();
+  WaveOutImpl(const WAVEFORMATEX *fmt,DWORD_PTR cb,DWORD_PTR cbInstance,DWORD fdwOpen);
+  ~WaveOutImpl();
+  bool amIReal() const;
+
+  MMRESULT prepareHeader(WAVEHDR *hdr,UINT size);
+  MMRESULT unprepareHeader(WAVEHDR *hdr,UINT size);
+  MMRESULT write(WAVEHDR *hdr,UINT size);
+  MMRESULT pause();
+  MMRESULT restart();
+  MMRESULT reset();
+  MMRESULT message(UINT uMsg,DWORD dwParam1,DWORD dwParam2);
+  MMRESULT getPosition(MMTIME *mmt,UINT size);
+
+  // ----
+  void encodeNoAudio(DWORD sampleCount);
+  void processFrame();
 };
 
-// encoder
-VideoEncoder *createVideoEncoder(const char *filename);
-void videoStartNextPart(bool autoSize=true);
+extern WaveOutImpl *currentWaveOut;
 
-void videoNeedEncoder();
-
-// setup
-void initVideo();
-void doneVideo();
-
-// init functions
-void initVideo_OpenGL();
-void initVideo_Direct3D8();
-void initVideo_Direct3D9();
-void initVideo_Direct3D10();
-void initVideo_DirectDraw();
-void initVideo_GDI();
-
-// helpers
-void setCaptureResolution(int width,int height);
-void nextFrame();
-void skipFrame();
+void initSoundsysWaveOut();
 
 #endif

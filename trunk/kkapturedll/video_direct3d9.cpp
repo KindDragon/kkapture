@@ -94,13 +94,13 @@ static void freeCaptureSurfaces()
 
 static void createCaptureSurfaces(IDirect3DDevice9 *dev,D3DFORMAT format)
 {
-  if(SUCCEEDED(dev->CreateTexture(captureWidth,captureHeight,1,0,
+  if(SUCCEEDED(dev->CreateTexture(captureBuffer.width,captureBuffer.height,1,0,
     format,D3DPOOL_SYSTEMMEM,&captureTex,0)))
   {
     if(FAILED(captureTex->GetSurfaceLevel(0,&captureSurf)))
       printLog("video/d3d9: couldn't get capture surface.\n");
 
-    if(FAILED(dev->CreateRenderTarget(captureWidth,captureHeight,format,
+    if(FAILED(dev->CreateRenderTarget(captureBuffer.width,captureBuffer.height,format,
       D3DMULTISAMPLE_NONE,0,FALSE,&captureInbetween,0)))
       printLog("video/d3d9: couldn't create multisampling blit buffer\n");
   }
@@ -150,7 +150,7 @@ static bool captureD3DFrame9(IDirect3DDevice9 *dev)
 
       if(SUCCEEDED(captureSurf->LockRect(&lr,0,D3DLOCK_READONLY)))
       {
-        blitAndFlipBGRAToCaptureData((unsigned char *) lr.pBits,lr.Pitch);
+        captureBuffer.blitAndFlipBGRA((unsigned char *) lr.pBits,lr.Pitch);
         captureSurf->UnlockRect();
         error = false;
       }
@@ -162,7 +162,7 @@ static bool captureD3DFrame9(IDirect3DDevice9 *dev)
   }
 
   if(!error)
-    encoder->WriteFrame(captureData);
+    encoder->WriteFrame(captureBuffer.data);
 
   return !error;
 }

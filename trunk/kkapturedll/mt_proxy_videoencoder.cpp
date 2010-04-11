@@ -110,7 +110,7 @@ struct MTProxyVideoEncoder::Internal
   {
     unsigned char* entryData = (unsigned char *) entry->ptr;
 
-    delete[] entryData;
+    _aligned_free(entryData);
     delete entry;
   }
 };
@@ -197,7 +197,7 @@ void MTProxyVideoEncoder::SetSize(int xRes,int yRes)
 void MTProxyVideoEncoder::WriteFrame(const unsigned char *buffer)
 {
   if(d->xRes && d->yRes)
-    d->QueueAppend(QC_WRITEFRAME,MakeCopy(buffer,d->xRes*d->yRes*3),0,0);
+    d->QueueAppend(QC_WRITEFRAME,MakeCopy(buffer,d->xRes*d->yRes*params.DestBpp),0,0);
 }
 
 void MTProxyVideoEncoder::SetAudioFormat(const tWAVEFORMATEX *fmt)

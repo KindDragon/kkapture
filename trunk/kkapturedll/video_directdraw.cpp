@@ -95,8 +95,8 @@ static IDirectDrawSurface* GetBlitSurface()
       printLog("video: can't get surface desc\n");
     else
     {
-      ddsd.dwWidth = captureWidth;
-      ddsd.dwHeight = captureHeight;
+      ddsd.dwWidth = captureBuffer.width;
+      ddsd.dwHeight = captureBuffer.height;
 
       ddsd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
       ddsd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
@@ -116,8 +116,8 @@ static IDirectDrawSurface* GetBlitSurface()
       printLog("video: can't get surface desc\n");
     else
     {
-      ddsd.dwWidth = captureWidth;
-      ddsd.dwHeight = captureHeight;
+      ddsd.dwWidth = captureBuffer.width;
+      ddsd.dwHeight = captureBuffer.height;
 
       ddsd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
       ddsd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
@@ -192,8 +192,8 @@ public:
     RECT rc;
     rc.left = 0;
     rc.top = 0;
-    rc.right = captureWidth;
-    rc.bottom = captureHeight;
+    rc.right = captureBuffer.width;
+    rc.bottom = captureBuffer.height;
 
     if(FAILED(blitSurface->Blt(&rc,surf,&rc,DDBLT_WAIT,0)))
     {
@@ -238,12 +238,12 @@ public:
     }
 
     // blit individual lines
-    for(int y=0;y<captureHeight;y++)
+    for(int y=0;y<captureBuffer.height;y++)
     {
-      unsigned char *src = surface + (captureHeight-1-y) * pitch;
-      unsigned char *dst = captureData + y * captureWidth * 3;
+      unsigned char *src = surface + (captureBuffer.height-1-y) * pitch;
+      unsigned char *dst = captureBuffer.data + y * captureBuffer.width * params.DestBpp;
 
-      BlitOneLine(src,dst,captureWidth);
+      BlitOneLine(src,dst,captureBuffer.width);
     }
 
     blitSurface->Unlock(surface);
@@ -315,7 +315,7 @@ static void PrimarySurfaceCreated(IUnknown *ddraw,IUnknown *srfp,int ver)
       printLog("video: can't get surface desc\n");
     else
     {
-      if(captureWidth != ddsd.dwWidth || captureHeight != ddsd.dwHeight)
+      if(captureBuffer.width != ddsd.dwWidth || captureBuffer.height != ddsd.dwHeight)
         setCaptureResolution(ddsd.dwWidth,ddsd.dwHeight);
     }
   }
@@ -330,7 +330,7 @@ static void PrimarySurfaceCreated(IUnknown *ddraw,IUnknown *srfp,int ver)
       printLog("video: can't get surface desc\n");
     else
     {
-      if(captureWidth != ddsd.dwWidth || captureHeight != ddsd.dwHeight)
+      if(captureBuffer.width != ddsd.dwWidth || captureBuffer.height != ddsd.dwHeight)
         setCaptureResolution(ddsd.dwWidth,ddsd.dwHeight);
     }
   }
@@ -368,7 +368,7 @@ static void ImplementFlip(IUnknown *surf,int version)
       VideoCaptureDataLock lock;
 
       if(Blitter.BlitSurfaceToCapture(back,version))
-        encoder->WriteFrame(captureData);
+        encoder->WriteFrame(captureBuffer.data);
 
       back->Release();
     }
@@ -412,7 +412,7 @@ static void ImplementBltToPrimary(IUnknown *surf,int version)
     VideoCaptureDataLock lock;
 
     if(Blitter.BlitSurfaceToCapture((IDirectDrawSurface *) surf,version))
-      encoder->WriteFrame(captureData);
+      encoder->WriteFrame(captureBuffer.data);
   }
 
   nextFrame();

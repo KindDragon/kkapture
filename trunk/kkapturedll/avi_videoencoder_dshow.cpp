@@ -88,7 +88,7 @@ public:
 
     // allocate buffers
     for(int i=0;i<BufferCount;i++)
-      Buffers[i] = new unsigned char[xRes*yRes*3];
+      Buffers[i] = (unsigned char*)_aligned_malloc(xRes*yRes*params.DestBpp, 16);
 
     BufferReadPtr = 0;
     BufferWritePtr = 0;
@@ -98,7 +98,7 @@ public:
   {
     // free buffers
     for(int i=0;i<BufferCount;i++)
-      delete[] Buffers[i];
+      _aligned_free(Buffers[i]);
   }
 
   HRESULT GetMediaType(CMediaType *mediaType)
@@ -120,9 +120,9 @@ public:
     vi->bmiHeader.biWidth       = XRes;
     vi->bmiHeader.biHeight      = YRes;
     vi->bmiHeader.biPlanes      = 1;
-    vi->bmiHeader.biBitCount    = 24;
+    vi->bmiHeader.biBitCount    = params.DestBpp * 8;
     vi->bmiHeader.biCompression = BI_RGB;
-    vi->bmiHeader.biSizeImage   = XRes * YRes * 3;
+    vi->bmiHeader.biSizeImage   = XRes * YRes * params.DestBpp;
 
     // clear source&target rectangles
     SetRectEmpty(&vi->rcSource);
@@ -230,7 +230,7 @@ public:
       if(ReadPrev != BufferWritePtr)
       {
         destBuffer = Buffers[BufferWritePtr];
-        memcpy(destBuffer,buffer,XRes * YRes * 3);
+        memcpy(destBuffer,buffer,XRes * YRes * params.DestBpp);
         BufferWritePtr = (BufferWritePtr + 1) % BufferCount;
         BufferWriteChange.Set();
       }

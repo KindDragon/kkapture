@@ -76,7 +76,7 @@ void AVIVideoEncoderVFW::Init()
   asi.fccType               = streamtypeVIDEO;
   asi.dwScale               = fpsDenom;
   asi.dwRate                = fpsNum;
-  asi.dwSuggestedBufferSize = xRes * yRes * 3;
+  asi.dwSuggestedBufferSize = xRes * yRes * params.DestBpp;
   SetRect(&asi.rcFrame,0,0,xRes,yRes);
   strcpy_s(asi.szName,"Video");
 
@@ -181,9 +181,9 @@ void AVIVideoEncoderVFW::StartEncode()
     bmi.biWidth       = xRes;
     bmi.biHeight      = yRes;
     bmi.biPlanes      = 1;
-    bmi.biBitCount    = 24;
+    bmi.biBitCount    = params.DestBpp * 8;
     bmi.biCompression = BI_RGB;
-    bmi.biSizeImage   = xRes * yRes * 3;
+    bmi.biSizeImage   = xRes * yRes * params.DestBpp;
     if(AVIStreamSetFormat(d->vidC,0,&bmi,sizeof(bmi)) == AVIERR_OK)
     {
       error = false;
@@ -342,7 +342,7 @@ void AVIVideoEncoderVFW::WriteFrame(const unsigned char *buffer)
     }
 
     LONG written = 0;
-    AVIStreamWrite(d->vidC,frame,1,(void *)buffer,3*xRes*yRes,0,0,&written);
+    AVIStreamWrite(d->vidC,frame,1,(void *)buffer,params.DestBpp*xRes*yRes,0,0,&written);
     frame++;
     d->overflowCounter += written;
   }

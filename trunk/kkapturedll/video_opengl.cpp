@@ -70,7 +70,7 @@ static void captureGLFrame()
 
   VideoCaptureDataLock lock;
 
-  if(captureData && encoder && params.CaptureVideo)
+  if(captureBuffer.data && encoder && params.CaptureVideo)
   {
     // use immediate blits if possible
     if(wglGetSwapIntervalEXT && wglSwapIntervalEXT && wglGetSwapIntervalEXT() > 0)
@@ -90,7 +90,7 @@ static void captureGLFrame()
     glReadBuffer(useReadBuffer);
 
     // actual readback
-    glReadPixels(0,0,captureWidth,captureHeight,GL_BGR_EXT,GL_UNSIGNED_BYTE,captureData);
+    glReadPixels(0,0,captureBuffer.width,captureBuffer.height,GL_BGR_EXT,GL_UNSIGNED_BYTE,captureBuffer.data);
 
     // restore bindings
     if(glBindFramebufferEXT)
@@ -98,7 +98,7 @@ static void captureGLFrame()
     glReadBuffer(oldReadBuffer);
 
     // encode
-    encoder->WriteFrame(captureData);
+    encoder->WriteFrame(captureBuffer.data);
   }
 }
 
