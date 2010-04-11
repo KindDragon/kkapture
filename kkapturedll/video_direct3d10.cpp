@@ -74,7 +74,7 @@ static HRESULT __stdcall Mine_SwapChain_Present(IDXGISwapChain *me,UINT SyncInte
       switch(desc.Format)
       {
       case DXGI_FORMAT_R8G8B8A8_UNORM:
-        blitAndFlipRGBAToCaptureData((unsigned char *) mapped.pData,mapped.RowPitch);
+        captureBuffer.blitAndFlipRGBA((unsigned char *) mapped.pData,mapped.RowPitch);
         grabOk = true;
         break;
 
@@ -91,7 +91,7 @@ static HRESULT __stdcall Mine_SwapChain_Present(IDXGISwapChain *me,UINT SyncInte
     if(device) device->Release();
 
     if(grabOk)
-      encoder->WriteFrame(captureData);
+      encoder->WriteFrame(captureBuffer.data);
   }
 
   HRESULT hr = Real_SwapChain_Present(me,0,Flags);

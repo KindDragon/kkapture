@@ -20,41 +20,10 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __VIDEO_H__
-#define __VIDEO_H__
+#ifndef __SOUND_FMOD_H__
+#define __SOUND_FMOD_H__
 
-#include "bltutils.h"
-
-class VideoEncoder;
-
-class VideoCaptureDataLock
-{
-public:
-  VideoCaptureDataLock();
-  ~VideoCaptureDataLock();
-};
-
-// encoder
-VideoEncoder *createVideoEncoder(const char *filename);
-void videoStartNextPart(bool autoSize=true);
-
-void videoNeedEncoder();
-
-// setup
-void initVideo();
-void doneVideo();
-
-// init functions
-void initVideo_OpenGL();
-void initVideo_Direct3D8();
-void initVideo_Direct3D9();
-void initVideo_Direct3D10();
-void initVideo_DirectDraw();
-void initVideo_GDI();
-
-// helpers
-void setCaptureResolution(int width,int height);
-void nextFrame();
-void skipFrame();
+void initSoundsysFMOD3();
+void initSoundsysFMODEx();
 
 #endif

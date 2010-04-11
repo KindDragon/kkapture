@@ -145,7 +145,7 @@ ULONGLONG ULongMulDiv(ULONGLONG a,DWORD b,DWORD c)
 
 void *MakeCopy(const void *src,int size)
 {
-  unsigned char *buffer = new unsigned char[size];
+  unsigned char *buffer = (unsigned char*)_aligned_malloc(size, 16);
   memcpy(buffer,src,size);
   return buffer;
 }

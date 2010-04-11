@@ -96,7 +96,7 @@ static bool captureD3DFrame8(IDirect3DDevice8 *dev)
 
       if(SUCCEEDED(captureSurf->LockRect(&lr,0,D3DLOCK_READONLY)))
       {
-        blitAndFlipBGRAToCaptureData((unsigned char *) lr.pBits,lr.Pitch);
+        captureBuffer.blitAndFlipBGRA((unsigned char *) lr.pBits,lr.Pitch);
         captureSurf->UnlockRect();
         error = false;
       }
@@ -106,7 +106,7 @@ static bool captureD3DFrame8(IDirect3DDevice8 *dev)
   }
 
   if(!error)
-    encoder->WriteFrame(captureData);
+    encoder->WriteFrame(captureBuffer.data);
 
   return !error;
 }
@@ -172,8 +172,8 @@ static HRESULT __stdcall Mine_D3DDevice8_Reset(IDirect3DDevice8 *dev,D3DPRESENT_
     getBackBufferSize(pp,param.hFocusWindow,width,height);
     
     setCaptureResolution(width,height);
-    if(FAILED(dev->CreateImageSurface(captureWidth,captureHeight,pp->BackBufferFormat,&captureSurf)))
-      printLog("video/d3d8: couldn't create capture surface (%d,%d,%d).\n",captureWidth,captureHeight,pp->BackBufferFormat);
+    if(FAILED(dev->CreateImageSurface(captureBuffer.width,captureBuffer.height,pp->BackBufferFormat,&captureSurf)))
+      printLog("video/d3d8: couldn't create capture surface (%d,%d,%d).\n",captureBuffer.width,captureBuffer.height,pp->BackBufferFormat);
 
     deviceRefCount -= 512;
     videoStartNextPart();
@@ -221,8 +221,8 @@ static HRESULT __stdcall Mine_D3D8_CreateDevice(IDirect3D8 *d3d,UINT a0,UINT a1,
     getBackBufferSize(a4,(HWND) a2,width,height);
 
     setCaptureResolution(width,height);
-    if(FAILED(dev->CreateImageSurface(captureWidth,captureHeight,a4->BackBufferFormat,&captureSurf)))
-      printLog("video/d3d8: couldn't create capture surface (%d,%d,%d).\n",captureWidth,captureHeight,a4->BackBufferFormat);
+    if(FAILED(dev->CreateImageSurface(captureBuffer.width,captureBuffer.height,a4->BackBufferFormat,&captureSurf)))
+      printLog("video/d3d8: couldn't create capture surface (%d,%d,%d).\n",captureBuffer.width,captureBuffer.height,a4->BackBufferFormat);
       //printLog("video/d3d8: couldn't create capture surface.\n");
 
     if(!Real_D3DDevice8_AddRef)

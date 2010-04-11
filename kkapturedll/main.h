@@ -37,7 +37,7 @@ extern bool exitNextFrame;
 extern void *hModule;
 
 // parameter block submitted by main app
-static const int PARAMVERSION = 4;
+static const int PARAMVERSION = 5;
 
 enum EncoderType
 {
@@ -52,6 +52,7 @@ struct ParameterBlock
   unsigned VersionTag;
   TCHAR FileName[_MAX_PATH];
   int FrameRateNum,FrameRateDenom;
+  int DestBpp;
   EncoderType Encoder;
   DWORD VideoCodec;
   DWORD VideoQuality;
