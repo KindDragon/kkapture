@@ -154,8 +154,8 @@ void VideoCaptureBuffer::blitAndFlipBGRA(unsigned char *source,unsigned pitch)
 	  {
 	    unsigned char *src = source + (height - 1 - y) * pitch;
 	    unsigned char *dst = data + y * width * 4;
-      
-      memcpy(dst, src, width * 4);
+
+		memcpy(dst, src, width * 4);
 	  }
   }
 }
@@ -336,6 +336,11 @@ void GenericBlitter::SetPalette(const struct tagPALETTEENTRY *palette,int nEntri
 bool GenericBlitter::IsPaletted() const
 {
   return Paletted;
+}
+
+int GenericBlitter::GetBytesPerPixel() const
+{
+  return BytesPerPixel;
 }
 
 void GenericBlitter::BlitOneLine(unsigned char *src,unsigned char *dst,int count)

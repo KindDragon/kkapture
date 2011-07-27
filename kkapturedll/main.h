@@ -74,6 +74,8 @@ struct ParameterBlock
   BOOL PowerDownAfterwards;
   BOOL UseEncoderThread;
   BOOL EnableGDICapture;
+  BOOL FrequentTimerCheck;
+  BOOL VirtualFramebuffer;
 
   DWORD CodecDataSize;
   UCHAR CodecSpecificData[16384];
